@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "Piscis"
+version = "0.0.1"
+description = "Deep learning algorithm for automatic spot detection in fluorescent microscopy images."
+readme = "README.md"
+requires-python = ">=3.7, <3.11"
+authors = [
+    {email = "wniu721@gmail.com"},
+    {name = "William Niu"}
+]
+keywords = ["machine learning", "deep learning", "spot detection", "fluorescent microscopy"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python"
+]
+dependencies = [
+    "deeptile",
+    "flax",
+    "imageio",
+    "numpy",
+    "opencv-python",
+    "pandas",
+    "scikit-image",
+    "scipy",
+    "tqdm"
+]
+
+[tool.setuptools]
+packages = ["piscis"]
+
+[tool.setuptools.package-data]
+piscis = ["trained_models/*"]
