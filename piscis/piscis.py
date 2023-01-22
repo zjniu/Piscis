@@ -74,8 +74,11 @@ class Piscis:
 
         if scale != 1:
             scales = (onp.array(y.shape[-2:]) - 1) / (onp.array(shape[-2:]) - 1)
-            for i in range(len(coords)):
-                coords[i][-2:] = (coords[i][-2:]) / scales
+            if batch_axis:
+                for i in range(len(coords)):
+                    coords[i][:, -2:] = coords[i][:, -2:] / scales
+            else:
+                coords[:, -2:] = coords[:, -2:] / scales
 
         return coords, y
 
@@ -134,8 +137,11 @@ class LoG:
 
         if scale != 1:
             scales = (onp.array(y.shape[-2:]) - 1) / (onp.array(shape[-2:]) - 1)
-            for i in range(len(coords)):
-                coords[i][-2:] = (coords[i][-2:]) / scales
+            if batch_axis:
+                for i in range(len(coords)):
+                    coords[i][:, -2:] = coords[i][:, -2:] / scales
+            else:
+                coords[:, -2:] = coords[:, -2:] / scales
 
         return coords, y
 
