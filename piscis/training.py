@@ -4,7 +4,6 @@ import numpy as onp
 import optax
 
 from abc import ABC
-from dataclasses import replace
 from flax.training import train_state
 from functools import partial
 from tqdm.auto import tqdm
@@ -32,6 +31,7 @@ def compute_metrics(poly_features, batch, loss_weights):
 
 class TrainState(train_state.TrainState, ABC):
     batch_stats: Any
+    epoch: int
     rng: Any
 
 
@@ -46,6 +46,7 @@ def create_train_state(rng, learning_rate, variables=None):
         apply_fn=model.apply,
         params=variables['params'],
         batch_stats=variables['batch_stats'],
+        epoch=0,
         rng=rng,
         tx=tx,
     )
@@ -83,31 +84,32 @@ def train_step(state, train_batch, val_batch, rng, loss_weights, learning_rate):
     return state, metrics
 
 
-def train_epoch(epoch, state, train_ds, valid_ds, batch_size, loss_weights, learning_rate):
+def train_epoch(state, train_ds, valid_ds, batch_size, loss_weights, learning_rate):
     """Train for a single epoch."""
 
-    print(f'epoch: {epoch}')
+    print(f'epoch: {state.epoch}')
 
     rng, *subrngs = jax.random.split(state.rng, 5)
-    state = replace(state, rng=rng)
+    state = state.replace(rng=rng)
     train_ds = transform_dataset(train_ds, subrngs[0])
     valid_ds = transform_dataset(valid_ds, subrngs[1])
 
     train_ds_size = len(train_ds['images'])
     val_ds_size = len(valid_ds['images'])
-    steps_per_epoch = train_ds_size // batch_size
-    val_batch_size = val_ds_size // steps_per_epoch
+    n_steps = train_ds_size // batch_size
+    val_batch_size = val_ds_size // n_steps
 
     perms = jax.random.permutation(subrngs[2], train_ds_size)
-    perms = perms[:steps_per_epoch * batch_size]  # skip incomplete batch
-    perms = perms.reshape((steps_per_epoch, batch_size))
+    perms = perms[:n_steps * batch_size]  # skip incomplete batch
+    perms = perms.reshape((n_steps, batch_size))
 
     val_perms = jax.random.permutation(subrngs[3], val_ds_size)
-    val_perms = val_perms[:steps_per_epoch * val_batch_size]  # skip incomplete batch
-    val_perms = val_perms.reshape((steps_per_epoch, val_batch_size))
+    val_perms = val_perms[:n_steps * val_batch_size]  # skip incomplete batch
+    val_perms = val_perms.reshape((n_steps, val_batch_size))
 
     batch_metrics = []
-    for perm, val_perm in tqdm(zip(perms, val_perms), total=steps_per_epoch):
+    pbar = tqdm(zip(perms, val_perms), total=n_steps)
+    for perm, val_perm in pbar:
         rng, subrng = jax.random.split(rng)
         train_batch = {k: v[perm, ...] for k, v in train_ds.items()}
         val_batch = {k: v[val_perm, ...] for k, v in valid_ds.items()}
@@ -117,17 +119,22 @@ def train_epoch(epoch, state, train_ds, valid_ds, batch_size, loss_weights, lear
         metrics = {k: float(v) for k, v in metrics.items()}
         batch_metrics.append(metrics)
 
-    # compute mean of metrics across each batch in epoch.
-    epoch_metrics = {
-        k: onp.mean([metrics[k] for metrics in batch_metrics]).astype(float)
-        for k in batch_metrics[0]}
+        # compute mean of metrics across each batch in epoch.
+        epoch_metrics = {
+            k: onp.mean([metrics[k] for metrics in batch_metrics]).astype(float)
+            for k in batch_metrics[0]}
+        epoch_metrics['n_steps'] = n_steps
 
-    summary = (
-        f"(train) loss: {epoch_metrics['loss']:>6.3f}, rmse: {epoch_metrics['rmse']:>6.6f}, "
-        f"bcel: {epoch_metrics['bcel']:>6.6f}, smoothf1: {epoch_metrics['smoothf1']:>6.3f}\n"
-        f"(val)   loss: {epoch_metrics['val_loss']:>6.3f}, rmse: {epoch_metrics['val_rmse']:>6.6f}, "
-        f"bcel: {epoch_metrics['val_bcel']:>6.6f}, smoothf1: {epoch_metrics['val_smoothf1']:>6.3f}\n"
-    )
-    print(summary)
+        summary = (
+            f"(train) loss: {epoch_metrics['loss']:>6.4f}, rmse: {epoch_metrics['rmse']:>6.4f}, "
+            f"bcel: {epoch_metrics['bcel']:>6.4f}, smoothf1: {epoch_metrics['smoothf1']:>6.4f} | "
+            f"(valid) loss: {epoch_metrics['val_loss']:>6.4f}, rmse: {epoch_metrics['val_rmse']:>6.4f}, "
+            f"bcel: {epoch_metrics['val_bcel']:>6.4f}, smoothf1: {epoch_metrics['val_smoothf1']:>6.4f}"
+        )
+        pbar.write(summary, end='\r')
+
+    print('\n')
+
+    state = state.replace(epoch=state.epoch + 1)
 
     return state, batch_metrics, epoch_metrics
