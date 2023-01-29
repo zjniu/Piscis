@@ -30,7 +30,7 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["piscis"]
+packages = ["piscis", "piscis.models", "piscis.networks"]
 
 [tool.setuptools.package-data]
 piscis = ["trained_models/*"]
