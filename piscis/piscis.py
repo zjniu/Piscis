@@ -34,7 +34,7 @@ class Piscis:
 
             x = jnp.expand_dims(x, axis=-1)
             deltas, labels = self.model.apply(self.variables, x, False)
-            counts = utils.vmap_colocalize_pixels(deltas, labels[:, :, :, 0])
+            counts = utils.vmap_colocalize_pixels(deltas, labels[:, :, :, 0], (3, 3))
 
             return deltas, labels, counts
 

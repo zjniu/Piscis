@@ -22,7 +22,7 @@ def _spots_loss(deltas_pred, labels_pred, deltas, labels, dilated_labels):
     sl_rmse = np.sqrt(np.sum(((deltas - deltas_pred) * dilated_labels[:, :, None]) ** 2) / np.sum(dilated_labels))
     sl_bcel = binary_cross_entropy_loss(labels_pred, labels, weighted=True)
 
-    counts = colocalize_pixels(deltas_pred * dilated_labels[:, :, None], labels_pred)
+    counts = colocalize_pixels(deltas_pred * dilated_labels[:, :, None], labels_pred, (3, 3))
 
     tp = np.sum(dilated_labels * counts)
     fp = np.sum(labels_pred) - tp

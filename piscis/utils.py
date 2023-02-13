@@ -2,14 +2,13 @@ import jax.numpy as np
 import numpy as onp
 
 from jax import vmap
-from jax.lax import dynamic_slice
+from jax.lax import dynamic_slice, scan
 from skimage import feature, measure
 
 
 def compute_spot_coordinates(deltas, counts, threshold, min_distance):
 
     stack = counts.ndim == 3
-    counts = onp.asarray(counts)
 
     if stack:
         labels = measure.label(counts > threshold)
@@ -19,39 +18,61 @@ def compute_spot_coordinates(deltas, counts, threshold, min_distance):
 
     if len(peaks) > 0:
         if stack:
-            coords = peaks + onp.pad(onp.asarray(deltas)[peaks[:, 0], peaks[:, 1], peaks[:, 2]], ((0, 0), (1, 0)))
+            coords = peaks + onp.pad(deltas[peaks[:, 0], peaks[:, 1], peaks[:, 2]], ((0, 0), (1, 0)))
         else:
-            coords = peaks + onp.asarray(deltas)[peaks[:, 0], peaks[:, 1]]
+            coords = peaks + deltas[peaks[:, 0], peaks[:, 1]]
     else:
         coords = onp.empty((0, counts.ndim), dtype=onp.float32)
 
     return coords
 
 
-def colocalize_pixels(deltas, labels):
+def scanned_colocalize_pixels(deltas, labels, n_iter, kernel_size=(5, 5)):
+
+    carry, _ = scan(lambda c, x: _scanned_colocalize_pixels(c, x, kernel_size), (deltas, labels), np.empty(n_iter))
+    counts = carry[1]
+
+    return counts
+
+
+vmap_scanned_colocalize_pixels = vmap(scanned_colocalize_pixels, in_axes=(0, 0))
+
+
+def _scanned_colocalize_pixels(carry, x, kernel_size):
+
+    deltas, counts = carry
+    counts = colocalize_pixels(deltas, counts, kernel_size)
+    carry = deltas, counts
+
+    return carry, counts
+
+
+def colocalize_pixels(deltas, labels, kernel_size=(3, 3)):
 
     i, j = np.arange(deltas.shape[0]), np.arange(deltas.shape[1])
     ii, jj = np.meshgrid(i, j, indexing='ij')
     index_map = np.stack((ii, jj), axis=-1)
 
     convergence = deltas + index_map
-    convergence = np.pad(convergence, ((1, 1), (1, 1), (0, 0)))
-    labels = np.pad(labels, ((1, 1), (1, 1)))
+
+    pad = (((kernel_size[0] - 1) // 2, ) * 2, ((kernel_size[1] - 1) // 2, ) * 2)
+    convergence = np.pad(convergence, (*pad, (0, 0)))
+    labels = np.pad(labels, pad)
 
     vmap_count_convergence = vmap(vmap(_count_convergence,
-                                       in_axes=(None, None, None, 0)), in_axes=(None, None, 0, None))
-    counts = vmap_count_convergence(convergence, labels, i, j)
+                                       in_axes=(None, None, None, None, 0)), in_axes=(None, None, None, 0, None))
+    counts = vmap_count_convergence(convergence, labels, kernel_size, i, j)
 
     return counts
 
 
-vmap_colocalize_pixels = vmap(colocalize_pixels, in_axes=(0, 0))
+vmap_colocalize_pixels = vmap(colocalize_pixels, in_axes=(0, 0, None))
 
 
-def _count_convergence(convergence, labels, i, j):
+def _count_convergence(convergence, labels, kernel_size, i, j):
 
-    convergence = dynamic_slice(convergence, (i, j, 0), (3, 3, 2))
-    labels = dynamic_slice(labels, (i, j), (3, 3))
+    convergence = dynamic_slice(convergence, (i, j, 0), (*kernel_size, 2))
+    labels = dynamic_slice(labels, (i, j), kernel_size)
     sources = _search_convergence(convergence, i, j)
     count = np.sum(sources * labels)
 
