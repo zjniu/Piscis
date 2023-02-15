@@ -20,7 +20,7 @@ def _spots_loss(deltas_pred, labels_pred, deltas, labels, dilated_labels):
     dilated_labels = dilated_labels[:, :, 0]
 
     sl_rmse = np.sqrt(np.sum(((deltas - deltas_pred) * dilated_labels[:, :, None]) ** 2) / np.sum(dilated_labels))
-    sl_bcel = binary_cross_entropy_loss(labels_pred, labels, weighted=True)
+    sl_bcel = binary_cross_entropy_loss(labels_pred, labels, alpha=0.5)
 
     counts = colocalize_pixels(deltas_pred * dilated_labels[:, :, None], labels_pred, (3, 3))
 
@@ -54,22 +54,24 @@ def mean_squared_error(y_pred, y):
     return mse
 
 
-def binary_cross_entropy_loss(labels_pred, labels, weighted=False):
-    if weighted:
-        beta = np.sum(~labels) / (np.sum(labels) + 1)
-    else:
+def binary_cross_entropy_loss(labels_pred, labels, alpha=0.0, epsilon=1e-7):
+
+    if alpha == 0:
         beta = 1
+    else:
+        beta = (np.sum(~labels) / (np.sum(labels) + epsilon)) ** alpha
 
     bcel = -np.mean(beta * np.log(labels_pred + 1e-7) * labels + np.log((1 - labels_pred) + 1e-7) * (1 - labels))
 
     return bcel
 
 
-def binary_focal_loss(labels_pred, labels, gamma=2, weighted=False):
-    if weighted:
-        beta = np.sum(~labels) / (np.sum(labels) + 1)
-    else:
+def binary_focal_loss(labels_pred, labels, gamma=2, alpha=0.0, epsilon=1e-7):
+
+    if alpha == 0:
         beta = 1
+    else:
+        beta = (np.sum(~labels) / (np.sum(labels) + epsilon)) ** alpha
 
     bfl = -np.mean(beta * (1 - labels_pred) ** gamma * np.log(labels_pred + 1e-7) * labels +
                    labels_pred ** gamma * np.log((1 - labels_pred) + 1e-7) * (1 - labels))
@@ -78,6 +80,7 @@ def binary_focal_loss(labels_pred, labels, gamma=2, weighted=False):
 
 
 def cross_entropy_loss(labels_pred, labels, alpha=0):
+
     if alpha > 0:
         beta = _calculate_class_weights(labels, alpha).reshape(1, 1, 1, -1)
     else:
