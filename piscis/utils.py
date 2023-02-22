@@ -1,5 +1,5 @@
-import jax.numpy as np
-import numpy as onp
+import jax.numpy as jnp
+import numpy as np
 
 from jax import vmap
 from jax.lax import dynamic_slice, scan
@@ -12,24 +12,24 @@ def compute_spot_coordinates(deltas, labels, threshold, min_distance):
 
     if stack:
         labels = measure.label(labels > threshold)
-        peaks = onp.array([region['centroid'] for region in measure.regionprops(labels)], dtype=int)
+        peaks = np.array([region['centroid'] for region in measure.regionprops(labels)], dtype=int)
     else:
         peaks = feature.peak_local_max(labels, min_distance=min_distance, threshold_abs=threshold, exclude_border=False)
 
     if len(peaks) > 0:
         if stack:
-            coords = peaks + onp.pad(deltas[peaks[:, 0], peaks[:, 1], peaks[:, 2]], ((0, 0), (1, 0)))
+            coords = peaks + np.pad(deltas[peaks[:, 0], peaks[:, 1], peaks[:, 2]], ((0, 0), (1, 0)))
         else:
             coords = peaks + deltas[peaks[:, 0], peaks[:, 1]]
     else:
-        coords = onp.empty((0, labels.ndim), dtype=onp.float32)
+        coords = np.empty((0, labels.ndim), dtype=np.float32)
 
     return coords
 
 
 def scanned_colocalize_pixels(deltas, labels, n_iter, kernel_size=(5, 5)):
 
-    carry, _ = scan(lambda c, x: _scanned_colocalize_pixels(c, x, kernel_size), (deltas, labels), np.empty(n_iter))
+    carry, _ = scan(lambda c, x: _scanned_colocalize_pixels(c, x, kernel_size), (deltas, labels), jnp.empty(n_iter))
     counts = carry[1]
 
     return counts
@@ -49,15 +49,15 @@ def _scanned_colocalize_pixels(carry, x, kernel_size):
 
 def colocalize_pixels(deltas, labels, kernel_size=(3, 3)):
 
-    i, j = np.arange(deltas.shape[0]), np.arange(deltas.shape[1])
-    ii, jj = np.meshgrid(i, j, indexing='ij')
-    index_map = np.stack((ii, jj), axis=-1)
+    i, j = jnp.arange(deltas.shape[0]), jnp.arange(deltas.shape[1])
+    ii, jj = jnp.meshgrid(i, j, indexing='ij')
+    index_map = jnp.stack((ii, jj), axis=-1)
 
     convergence = deltas + index_map
 
     pad = (((kernel_size[0] - 1) // 2, ) * 2, ((kernel_size[1] - 1) // 2, ) * 2)
-    convergence = np.pad(convergence, (*pad, (0, 0)))
-    labels = np.pad(labels, pad)
+    convergence = jnp.pad(convergence, (*pad, (0, 0)))
+    labels = jnp.pad(labels, pad)
 
     vmap_count_convergence = vmap(vmap(_count_convergence,
                                        in_axes=(None, None, None, None, 0)), in_axes=(None, None, None, 0, None))
@@ -74,7 +74,7 @@ def _count_convergence(convergence, labels, kernel_size, i, j):
     convergence = dynamic_slice(convergence, (i, j, 0), (*kernel_size, 2))
     labels = dynamic_slice(labels, (i, j), kernel_size)
     sources = _search_convergence(convergence, i, j)
-    count = np.sum(sources * labels)
+    count = jnp.sum(sources * labels)
 
     return count
 
@@ -89,8 +89,8 @@ def _search_convergence(convergence, i, j):
 
 def match_coords(coords, i, set_id, coord_set_ids, checked, threshold):
 
-    distances = onp.sqrt(onp.sum((coords[i] - coords) ** 2, axis=1))
-    matches = list(onp.where(distances < threshold)[0])
+    distances = np.sqrt(np.sum((coords[i] - coords) ** 2, axis=1))
+    matches = list(np.where(distances < threshold)[0])
     matches.remove(i)
     for match in matches:
         coord_set_ids[match] = set_id
@@ -134,8 +134,8 @@ def remove_duplicate_coords(coords, threshold=1):
     for s in sets.values():
 
         old_coords = coords[list(s)]
-        new_coords.append(onp.mean(old_coords, axis=0))
+        new_coords.append(np.mean(old_coords, axis=0))
 
-    new_coords = onp.array(new_coords)
+    new_coords = np.array(new_coords)
 
     return new_coords
