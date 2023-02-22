@@ -6,15 +6,15 @@ from jax.lax import dynamic_slice, scan
 from skimage import feature, measure
 
 
-def compute_spot_coordinates(deltas, counts, threshold, min_distance):
+def compute_spot_coordinates(deltas, labels, threshold, min_distance):
 
-    stack = counts.ndim == 3
+    stack = labels.ndim == 3
 
     if stack:
-        labels = measure.label(counts > threshold)
+        labels = measure.label(labels > threshold)
         peaks = onp.array([region['centroid'] for region in measure.regionprops(labels)], dtype=int)
     else:
-        peaks = feature.peak_local_max(counts, min_distance=min_distance, threshold_abs=threshold, exclude_border=False)
+        peaks = feature.peak_local_max(labels, min_distance=min_distance, threshold_abs=threshold, exclude_border=False)
 
     if len(peaks) > 0:
         if stack:
@@ -22,7 +22,7 @@ def compute_spot_coordinates(deltas, counts, threshold, min_distance):
         else:
             coords = peaks + deltas[peaks[:, 0], peaks[:, 1]]
     else:
-        coords = onp.empty((0, counts.ndim), dtype=onp.float32)
+        coords = onp.empty((0, labels.ndim), dtype=onp.float32)
 
     return coords
 
