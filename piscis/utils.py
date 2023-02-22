@@ -29,7 +29,7 @@ def compute_spot_coordinates(deltas, labels, threshold, min_distance):
 
 def scanned_colocalize_pixels(deltas, labels, n_iter, kernel_size=(5, 5)):
 
-    carry, _ = scan(lambda c, x: _scanned_colocalize_pixels(c, x, kernel_size), (deltas, labels), jnp.empty(n_iter))
+    carry, _ = scan(lambda c, x: _scanned_colocalize_pixels(c, kernel_size), (deltas, labels), jnp.empty(n_iter))
     counts = carry[1]
 
     return counts
@@ -38,7 +38,7 @@ def scanned_colocalize_pixels(deltas, labels, n_iter, kernel_size=(5, 5)):
 vmap_scanned_colocalize_pixels = vmap(scanned_colocalize_pixels, in_axes=(0, 0))
 
 
-def _scanned_colocalize_pixels(carry, x, kernel_size):
+def _scanned_colocalize_pixels(carry, kernel_size):
 
     deltas, counts = carry
     counts = colocalize_pixels(deltas, counts, kernel_size)

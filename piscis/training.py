@@ -4,7 +4,6 @@ import optax
 import orbax
 import orbax.checkpoint
 import nest_asyncio
-nest_asyncio.apply()
 
 from abc import ABC
 from flax import serialization
@@ -19,12 +18,15 @@ from piscis.models.spots import SpotsModel
 from piscis.data import load_datasets, transform_batch, transform_dataset
 from piscis.losses import spots_loss
 
+nest_asyncio.apply()
+
 
 class TrainState(train_state.TrainState, ABC):
 
     batch_stats: Any
     epoch: int
     rng: Any
+
 
 def create_train_state(rng, input_size, learning_rate, variables=None):
 
@@ -34,7 +36,8 @@ def create_train_state(rng, input_size, learning_rate, variables=None):
     if variables is None:
         variables = model.init({'params': subrng}, np.ones((1, *input_size, 1)))
     tx = optax.adabelief(learning_rate)
-    train_state = TrainState.create(
+
+    return TrainState.create(
         apply_fn=model.apply,
         params=variables['params'],
         batch_stats=variables['batch_stats'],
@@ -42,8 +45,6 @@ def create_train_state(rng, input_size, learning_rate, variables=None):
         rng=rng,
         tx=tx,
     )
-
-    return train_state
 
 
 def compute_metrics(poly_features, batch, loss_weights):
@@ -90,6 +91,7 @@ def train_step(state, train_batch, loss_weights, learning_rate):
     metrics['learning_rate'] = lr
 
     return state, metrics
+
 
 def train_epoch(state, ds, batch_size, loss_weights, learning_rate, input_size, coords_max_length):
 
