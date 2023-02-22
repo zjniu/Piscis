@@ -1,9 +1,6 @@
 import json
 import numpy as np
 import optax
-import orbax
-import orbax.checkpoint
-import nest_asyncio
 
 from abc import ABC
 from flax import serialization
@@ -17,8 +14,6 @@ from typing import Any
 from piscis.models.spots import SpotsModel
 from piscis.data import load_datasets, transform_batch, transform_dataset
 from piscis.losses import spots_loss
-
-nest_asyncio.apply()
 
 
 class TrainState(train_state.TrainState, ABC):
@@ -215,8 +210,6 @@ def train_model(model_path, dataset_path, dataset_adjustment='normalize',
         state = create_train_state(rng, input_size, learning_rate)
         state = checkpoints.restore_checkpoint(checkpoint_path, state, prefix=checkpoint_prefix)
 
-    orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
-
     for _ in range(n_epochs):
 
         state, batch_metrics, epoch_metrics = \
@@ -232,7 +225,6 @@ def train_model(model_path, dataset_path, dataset_adjustment='normalize',
             prefix=checkpoint_prefix,
             keep=10,
             keep_every_n_steps=10,
-            orbax_checkpointer=orbax_checkpointer
         )
 
         with open(batch_metrics_log_path, 'w') as f_batch_metrics_log:
