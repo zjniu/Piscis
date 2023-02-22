@@ -91,13 +91,12 @@ def train_step(state, train_batch, loss_weights, learning_rate):
 
     return state, metrics
 
-def train_epoch(state, ds, batch_size, loss_weights, learning_rate):
+def train_epoch(state, ds, batch_size, loss_weights, learning_rate, input_size, coords_max_length):
 
     print(f'epoch: {state.epoch + 1}')
 
     rng, *subrngs = random.split(state.rng, 4)
     state = state.replace(rng=rng)
-    input_size = ds['train']['images'].shape[1:3]
     train_ds = transform_dataset(ds['train'], subrngs[0], input_size)
     valid_ds = transform_dataset(ds['valid'], subrngs[1], input_size)
 
@@ -115,7 +114,7 @@ def train_epoch(state, ds, batch_size, loss_weights, learning_rate):
     pbar = tqdm(perms, total=n_steps)
     for perm in pbar:
         train_batch = {k: v[perm, ...] for k, v in train_ds.items()}
-        train_batch = transform_batch(train_batch, 1028)
+        train_batch = transform_batch(train_batch, coords_max_length)
         state, metrics = train_step(state, train_batch, loss_weights, learning_rate)
         metrics = {k: float(v) for k, v in metrics.items()}
         batch_metrics.append(metrics)
@@ -136,7 +135,7 @@ def train_epoch(state, ds, batch_size, loss_weights, learning_rate):
     val_epoch_metrics = []
     for i in range(val_n_steps):
         val_batch = {k: v[i * batch_size:(i + 1) * batch_size, ...] for k, v in valid_ds.items()}
-        val_batch = transform_batch(val_batch, 1028)
+        val_batch = transform_batch(val_batch, coords_max_length)
         _, (val_metrics, _) = loss_fn(state.params, state.batch_stats, False, val_batch, loss_weights)
         val_metrics = {f'val_{k}': v for k, v in val_metrics.items()}
         val_batch_metrics.append(val_metrics)
@@ -189,6 +188,8 @@ def train_model(model_path, dataset_path, dataset_adjustment='normalize',
     n_train_images = train_images_shape[0]
     input_size = train_images_shape[1:3]
     estimated_steps_per_epoch = n_train_images // batch_size
+    coords_max_length = \
+        max([len(coords) for coords in ds['train']['coords']] + [len(coords) for coords in ds['valid']['coords']])
 
     rng = random.PRNGKey(random_seed)
 
@@ -216,7 +217,8 @@ def train_model(model_path, dataset_path, dataset_adjustment='normalize',
 
     for _ in range(n_epochs):
 
-        state, batch_metrics, epoch_metrics = train_epoch(state, ds, batch_size, loss_weights, learning_rate)
+        state, batch_metrics, epoch_metrics = \
+            train_epoch(state, ds, batch_size, loss_weights, learning_rate, input_size, coords_max_length)
 
         batch_metrics_log += batch_metrics
         epoch_metrics_log += [epoch_metrics]
