@@ -124,13 +124,13 @@ def load_datasets(path, adjustment=None):
     return ds
 
 
-def transform_dataset(ds, key, output_shape=(256, 256), min_spots=3):
+def transform_dataset(ds, key, input_size, min_spots=1):
 
     base_scales = np.ones(len(ds['images']))
 
     # Create transformer
     transformer = RandomAugment()
-    transformer.generate_transforms(ds['images'], key, base_scales, output_shape)
+    transformer.generate_transforms(ds['images'], key, base_scales, input_size)
 
     # Apply transformations
     images = transformer.apply_image_transforms(ds['images'], interpolation='bilinear')

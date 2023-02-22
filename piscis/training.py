@@ -1,20 +1,53 @@
-import jax
-import jax.numpy as np
-import numpy as onp
+import json
+import numpy as np
 import optax
+import orbax
+import orbax.checkpoint
+import nest_asyncio
+nest_asyncio.apply()
 
 from abc import ABC
-from flax.training import train_state
+from flax import serialization
+from flax.training import checkpoints, train_state
 from functools import partial
+from jax import jit, random, value_and_grad
+from pathlib import Path
 from tqdm.auto import tqdm
 from typing import Any
 
 from piscis.models.spots import SpotsModel
-from piscis.data import transform_batch, transform_dataset
+from piscis.data import load_datasets, transform_batch, transform_dataset
 from piscis.losses import spots_loss
 
 
+class TrainState(train_state.TrainState, ABC):
+
+    batch_stats: Any
+    epoch: int
+    rng: Any
+
+def create_train_state(rng, input_size, learning_rate, variables=None):
+
+    rng, subrng = random.split(rng, 2)
+    model = SpotsModel()
+
+    if variables is None:
+        variables = model.init({'params': subrng}, np.ones((1, *input_size, 1)))
+    tx = optax.adabelief(learning_rate)
+    train_state = TrainState.create(
+        apply_fn=model.apply,
+        params=variables['params'],
+        batch_stats=variables['batch_stats'],
+        epoch=-1,
+        rng=rng,
+        tx=tx,
+    )
+
+    return train_state
+
+
 def compute_metrics(poly_features, batch, loss_weights):
+
     deltas_pred, labels_pred = poly_features
 
     rmse, bcel, smoothf1 = spots_loss(deltas_pred, labels_pred,
@@ -26,115 +59,185 @@ def compute_metrics(poly_features, batch, loss_weights):
         'smoothf1': smoothf1,
         'loss': loss
     }
+
     return metrics
 
 
-class TrainState(train_state.TrainState, ABC):
-    batch_stats: Any
-    epoch: int
-    rng: Any
+@partial(jit, static_argnums=2)
+def loss_fn(params, batch_stats, train, batch, loss_weights):
 
+    variables = {'params': params, 'batch_stats': batch_stats}
+    images = batch['images']
 
-def create_train_state(rng, learning_rate, variables=None):
-    """Creates initial `TrainState`."""
-    rng, *subrngs = jax.random.split(rng, 3)
-    model = SpotsModel()
-    if variables is None:
-        variables = model.init({'params': subrngs[0], 'dropout': subrngs[1]}, np.ones((1, 256, 256, 1)))
-    tx = optax.adabelief(learning_rate)
-    return TrainState.create(
-        apply_fn=model.apply,
-        params=variables['params'],
-        batch_stats=variables['batch_stats'],
-        epoch=0,
-        rng=rng,
-        tx=tx,
-    )
-
-
-def loss_fn(params, batch_stats, rng, batch, loss_weights):
-
-    if rng is None:
-        poly_features = SpotsModel().apply(
-            {'params': params, 'batch_stats': batch_stats}, batch['images'],
-            train=False
-        )
-        mutated_vars = None
+    if train:
+        poly_features, mutated_vars = SpotsModel().apply(variables, images, train=train, mutable=['batch_stats'])
     else:
-        poly_features, mutated_vars = SpotsModel().apply(
-            {'params': params, 'batch_stats': batch_stats}, batch['images'],
-            train=True, mutable=['batch_stats'], rngs={'dropout': rng}
-        )
+        poly_features = SpotsModel().apply(variables, images, train=train)
+        mutated_vars = None
     metrics = compute_metrics(poly_features, batch, loss_weights)
     loss = metrics['loss']
+
     return loss, (metrics, mutated_vars)
 
 
-@partial(jax.jit, static_argnums=5)
-def train_step(state, train_batch, val_batch, rng, loss_weights, learning_rate):
+@partial(jit, static_argnums=3)
+def train_step(state, train_batch, loss_weights, learning_rate):
 
-    grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
-    (_, (train_metrics, mutated_vars)), grads = grad_fn(state.params, state.batch_stats, rng, train_batch, loss_weights)
-    _, (val_metrics, _) = loss_fn(state.params, state.batch_stats, None, val_batch, loss_weights)
+    grad_fn = value_and_grad(loss_fn, has_aux=True)
+    (_, (metrics, mutated_vars)), grads = grad_fn(state.params, state.batch_stats, True, train_batch, loss_weights)
     state = state.apply_gradients(grads=grads, batch_stats=mutated_vars['batch_stats'])
-    metrics = train_metrics | {f'val_{k}': v for k, v in val_metrics.items()}
     lr = learning_rate(state.step)
     metrics['learning_rate'] = lr
 
     return state, metrics
 
+def train_epoch(state, ds, batch_size, loss_weights, learning_rate):
 
-def train_epoch(state, train_ds, valid_ds, batch_size, loss_weights, learning_rate):
-    """Train for a single epoch."""
+    print(f'epoch: {state.epoch + 1}')
 
-    print(f'epoch: {state.epoch}')
-
-    rng, *subrngs = jax.random.split(state.rng, 5)
+    rng, *subrngs = random.split(state.rng, 4)
     state = state.replace(rng=rng)
-    train_ds = transform_dataset(train_ds, subrngs[0])
-    valid_ds = transform_dataset(valid_ds, subrngs[1])
+    input_size = ds['train']['images'].shape[1:3]
+    train_ds = transform_dataset(ds['train'], subrngs[0], input_size)
+    valid_ds = transform_dataset(ds['valid'], subrngs[1], input_size)
 
     train_ds_size = len(train_ds['images'])
     val_ds_size = len(valid_ds['images'])
     n_steps = train_ds_size // batch_size
-    val_batch_size = val_ds_size // n_steps
+    val_n_steps = val_ds_size // batch_size
 
-    perms = jax.random.permutation(subrngs[2], train_ds_size)
+    perms = random.permutation(subrngs[2], train_ds_size)
     perms = perms[:n_steps * batch_size]  # skip incomplete batch
     perms = perms.reshape((n_steps, batch_size))
 
-    val_perms = jax.random.permutation(subrngs[3], val_ds_size)
-    val_perms = val_perms[:n_steps * val_batch_size]  # skip incomplete batch
-    val_perms = val_perms.reshape((n_steps, val_batch_size))
-
     batch_metrics = []
-    pbar = tqdm(zip(perms, val_perms), total=n_steps)
-    for perm, val_perm in pbar:
-        rng, subrng = jax.random.split(rng)
+    epoch_metrics = {}
+    pbar = tqdm(perms, total=n_steps)
+    for perm in pbar:
         train_batch = {k: v[perm, ...] for k, v in train_ds.items()}
-        val_batch = {k: v[val_perm, ...] for k, v in valid_ds.items()}
         train_batch = transform_batch(train_batch, 1028)
-        val_batch = transform_batch(val_batch, 1028)
-        state, metrics = train_step(state, train_batch, val_batch, subrng, loss_weights, learning_rate)
+        state, metrics = train_step(state, train_batch, loss_weights, learning_rate)
         metrics = {k: float(v) for k, v in metrics.items()}
         batch_metrics.append(metrics)
 
         # compute mean of metrics across each batch in epoch.
         epoch_metrics = {
-            k: onp.mean([metrics[k] for metrics in batch_metrics]).astype(float)
+            k: np.mean([metrics[k] for metrics in batch_metrics]).astype(float)
             for k in batch_metrics[0]}
         epoch_metrics['n_steps'] = n_steps
 
         summary = (
             f"(train) loss: {epoch_metrics['loss']:>6.4f}, rmse: {epoch_metrics['rmse']:>6.4f}, "
+            f"bcel: {epoch_metrics['bcel']:>6.4f}, smoothf1: {epoch_metrics['smoothf1']:>6.4f}"
+        )
+        pbar.write(summary, end='\r')
+
+    val_batch_metrics = []
+    val_epoch_metrics = []
+    for i in range(val_n_steps):
+        val_batch = {k: v[i * batch_size:(i + 1) * batch_size, ...] for k, v in valid_ds.items()}
+        val_batch = transform_batch(val_batch, 1028)
+        _, (val_metrics, _) = loss_fn(state.params, state.batch_stats, False, val_batch, loss_weights)
+        val_metrics = {f'val_{k}': v for k, v in val_metrics.items()}
+        val_batch_metrics.append(val_metrics)
+
+        val_epoch_metrics = {
+            k: np.mean([metrics[k] for metrics in val_batch_metrics]).astype(float)
+            for k in val_batch_metrics[0]}
+
+        summary = (
+            f"(train) loss: {epoch_metrics['loss']:>6.4f}, rmse: {epoch_metrics['rmse']:>6.4f}, "
             f"bcel: {epoch_metrics['bcel']:>6.4f}, smoothf1: {epoch_metrics['smoothf1']:>6.4f} | "
-            f"(valid) loss: {epoch_metrics['val_loss']:>6.4f}, rmse: {epoch_metrics['val_rmse']:>6.4f}, "
-            f"bcel: {epoch_metrics['val_bcel']:>6.4f}, smoothf1: {epoch_metrics['val_smoothf1']:>6.4f}"
+            f"(valid) loss: {val_epoch_metrics['val_loss']:>6.4f}, rmse: {val_epoch_metrics['val_rmse']:>6.4f}, "
+            f"bcel: {val_epoch_metrics['val_bcel']:>6.4f}, smoothf1: {val_epoch_metrics['val_smoothf1']:>6.4f}"
         )
         pbar.write(summary, end='\r')
 
     print('\n')
 
+    epoch_metrics = epoch_metrics | val_epoch_metrics
     state = state.replace(epoch=state.epoch + 1)
 
     return state, batch_metrics, epoch_metrics
+
+
+def train_model(model_path, dataset_path, dataset_adjustment='normalize',
+                n_epochs=100, random_seed=0, batch_size=8, learning_rate=None, loss_weights=None):
+
+    model_path = Path(model_path)
+    model_parent_path = model_path.parent
+    model_name = model_path.stem
+    checkpoint_prefix = f'{model_name}_ckpt'
+    checkpoint_path = model_parent_path.joinpath(f'{model_name}_ckpts')
+    checkpoint_path.mkdir(parents=True, exist_ok=True)
+    batch_metrics_log_path = model_parent_path.joinpath(f'{model_name}_batch_metrics_log')
+    epoch_metrics_log_path = model_parent_path.joinpath(f'{model_name}_epoch_metrics_log')
+
+    if batch_metrics_log_path.is_file():
+        with open(batch_metrics_log_path, 'r') as f_batch_metrics_log:
+            batch_metrics_log = json.load(f_batch_metrics_log)
+    else:
+        batch_metrics_log = []
+    if epoch_metrics_log_path.is_file():
+        with open(epoch_metrics_log_path, 'r') as f_epoch_metrics_log:
+            epoch_metrics_log = json.load(f_epoch_metrics_log)
+    else:
+        epoch_metrics_log = []
+
+    ds = load_datasets(dataset_path, adjustment=dataset_adjustment)
+    train_images_shape = ds['train']['images'].shape
+    n_train_images = train_images_shape[0]
+    input_size = train_images_shape[1:3]
+    estimated_steps_per_epoch = n_train_images // batch_size
+
+    rng = random.PRNGKey(random_seed)
+
+    if learning_rate is None:
+        learning_rate = optax.exponential_decay(0.001, estimated_steps_per_epoch, 0.95)
+
+    if loss_weights is None:
+        loss_weights = {
+            'rmse': 2,
+            'bcel': 1,
+            'smoothf1': 5
+        }
+
+    if next(checkpoint_path.iterdir(), None) is None:
+        if model_path.is_file():
+            variables = checkpoints.restore_checkpoint(model_path, None)
+        else:
+            variables = None
+        state = create_train_state(rng, input_size, learning_rate, variables)
+    else:
+        state = create_train_state(rng, input_size, learning_rate)
+        state = checkpoints.restore_checkpoint(checkpoint_path, state, prefix=checkpoint_prefix)
+
+    orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
+
+    for _ in range(n_epochs):
+
+        state, batch_metrics, epoch_metrics = train_epoch(state, ds, batch_size, loss_weights, learning_rate)
+
+        batch_metrics_log += batch_metrics
+        epoch_metrics_log += [epoch_metrics]
+
+        checkpoints.save_checkpoint(
+            ckpt_dir=checkpoint_path,
+            target=state,
+            step=state.epoch,
+            prefix=checkpoint_prefix,
+            keep=10,
+            keep_every_n_steps=10,
+            orbax_checkpointer=orbax_checkpointer
+        )
+
+        with open(batch_metrics_log_path, 'w') as f_batch_metrics_log:
+            json.dump(batch_metrics_log, f_batch_metrics_log, indent=4)
+        with open(epoch_metrics_log_path, 'w') as f_epoch_metrics_log:
+            json.dump(epoch_metrics_log, f_epoch_metrics_log, indent=4)
+
+    variables = {'params': state.params, 'batch_stats': state.batch_stats, 'input_size': input_size}
+    bytes_model = serialization.to_bytes(variables)
+
+    with open(model_path, 'wb') as f_model:
+        f_model.write(bytes_model)
