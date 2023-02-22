@@ -120,40 +120,40 @@ class RandomAugment:
         return transformed_images
 
 
+def batch_normalize(images, lower=0, upper=100, epsilon=1e-7):
+
+    normalized_images = []
+    for image in images:
+        normalized_images.append(normalize(image, lower, upper, epsilon))
+    normalized_images = onp.stack(normalized_images)
+
+    return normalized_images
+
+
 def normalize(image, lower=0, upper=100, epsilon=1e-7):
 
     image_lower = onp.percentile(image, lower)
     image_upper = onp.percentile(image, upper)
 
-    return (image - image_lower) / onp.maximum(image_upper - image_lower, epsilon)
-
-
-def batch_normalize(images, lower=0, upper=100, epsilon=1e-7):
-
-    return vmap(_normalize, in_axes=(0, None, None, None))(images, lower, upper, epsilon)
-
-
-@jit
-def _normalize(image, lower, upper, epsilon):
-
-    image_lower = np.percentile(image, lower)
-    image_upper = np.percentile(image, upper)
-
-    return (image - image_lower) / np.maximum(image_upper - image_lower, epsilon)
+    return (image - image_lower) / (image_upper - image_lower + epsilon)
 
 
 def batch_standardize(images, epsilon=1e-7):
 
-    return vmap(_standardize, in_axes=(0, None))(images, epsilon)
+    standardized_images = []
+    for image in images:
+        standardized_images.append(normalize(image, epsilon))
+    standardized_images = onp.stack(standardized_images)
+
+    return standardized_images
 
 
-@jit
-def _standardize(image, epsilon):
+def standardize(image, epsilon=1e-7):
 
-    return (image - np.mean(image)) / np.maximum(np.std(image), epsilon)
+    return (image - onp.mean(image)) / (onp.std(image) + epsilon)
 
 
-def subpixel_distance_transform(coords_list, coords_pad_length=None, shape=(128, 128), dy=1, dx=1):
+def subpixel_distance_transform(coords_list, coords_pad_length=None, shape=(256, 256), dy=1.0, dx=1.0):
 
     """For each pixel in an image, return the vertical and horizontal distances to a point in
     ``coords`` that is in the pixel nearest to it.
