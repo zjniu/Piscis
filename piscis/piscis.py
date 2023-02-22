@@ -19,7 +19,7 @@ TRAINED_MODELS_DIR = Path(__file__).parent.joinpath('trained_models')
 
 class Piscis:
 
-    def __init__(self, model='spots', batch_size=8):
+    def __init__(self, model='spots', batch_size=4, input_size=None):
 
         if xla_bridge.get_backend().platform == 'cpu':
             batch_size = 1
@@ -29,16 +29,20 @@ class Piscis:
         self.variables = checkpoints.restore_checkpoint(TRAINED_MODELS_DIR.joinpath(model), None)
         self.batch_size = batch_size
 
+        if input_size is None:
+            input_size = self.variables['input_size']
+            input_size = (input_size['0'], input_size['1'])
+        self.input_size = input_size
+
         @jit
         def jitted(x):
 
             x = jnp.expand_dims(x, axis=-1)
             deltas, labels = self.model.apply(self.variables, x, False)
-            counts = utils.vmap_colocalize_pixels(deltas, labels[:, :, :, 0], (3, 3))
 
-            return deltas, labels, counts
+            return deltas, labels
 
-        jitted(jnp.zeros((self.batch_size, 256, 256)))
+        jitted(jnp.zeros((self.batch_size, *self.input_size)))
         self._jitted = jitted
 
     def predict(self, x, stack=False, scale=1, threshold=2.0, min_distance=1, normalize=True, intermediates=False):
@@ -46,8 +50,8 @@ class Piscis:
         x, batch_axis, x_min, x_max = _preprocess(x, stack, normalize=normalize)
 
         dt = deeptile.load(x, link_data=False, dask=True)
-        tile_size = (round(256 / scale), ) * 2
-        scales = np.array([[255, 255]]) / (np.array(tile_size) - 1)
+        tile_size = (round(self.input_size[0] / scale), round(self.input_size[1] / scale))
+        scales = (np.array([self.input_size]) - 1) / (np.array(tile_size) - 1)
         tiles = dt.get_tiles(tile_size=tile_size, overlap=(0.1, 0.1)).pad(mode='reflect')
 
         if x_min is not None:
@@ -80,7 +84,7 @@ class Piscis:
                 output = self._predict_stack(tiles, stack_axis_len, scales, threshold, min_distance, intermediates)
             else:
                 output = lift(self._process_plane, vectorized=True, batch_axis=batch_axis, pad_final_batch=True,
-                             batch_size=self.batch_size)(tiles, scales, threshold, min_distance, intermediates)
+                              batch_size=self.batch_size)(tiles, scales, threshold, min_distance, intermediates)
             if intermediates:
                 coords = stitch.stitch_coords(output[0])
                 y = np.asarray(stitch.stitch_image(output[1], blend=False))
@@ -99,7 +103,7 @@ class Piscis:
         process_stack = lift(self._process, vectorized=True, batch_axis=True, pad_final_batch=True,
                              batch_size=self.batch_size)
         postprocess_stack = lift(self._postprocess_stack, vectorized=False, batch_axis=False)
-        y, process_variables = process_stack.init(tiles, intermediates)
+        carry, process_variables = process_stack.init(tiles)
         coords = None
         postprocess_variables = None
         n_steps = process_variables['n_steps'] + 1
@@ -109,17 +113,17 @@ class Piscis:
 
         for i in range(n_steps):
 
-            y, process_variables = process_stack.apply(y, process_variables)
+            carry, process_variables = process_stack.apply(carry, process_variables)
 
             if postprocess_variables is None:
-                coords, postprocess_variables = postprocess_stack.init(y, scales, threshold, min_distance)
+                coords, postprocess_variables = postprocess_stack.init(*carry, scales, threshold, min_distance)
 
             mod = mod + self.batch_size
             if mod >= stack_axis_len:
                 coords, postprocess_variables = postprocess_stack.apply(coords, postprocess_variables)
                 if not intermediates:
-                    y['deltas'][j, k] = None
-                    y['counts'][j, k] = None
+                    carry[0][j, k] = None
+                    carry[1][j, k] = None
                 mod = mod - stack_axis_len
                 if k == coords.shape[1] - 1:
                     k = 0
@@ -128,7 +132,7 @@ class Piscis:
                     k = k + 1
 
         if intermediates:
-            y = np.concatenate((y['deltas'], y['labels'], y['counts'].s[:, :, :, None]), axis=-1)
+            y = np.concatenate((carry[0], carry[1]), axis=-1)
             y = np.moveaxis(y, -1, 1)
             return coords, y
         else:
@@ -136,58 +140,38 @@ class Piscis:
 
     def _process_plane(self, tiles, scales, threshold, min_distance, intermediates):
 
-        y = self._process(tiles, intermediates)
-        deltas = y['deltas']
-        counts = y['counts']
+        deltas, labels = self._process(tiles)
 
         coords = np.empty(len(deltas), dtype=object)
-        for i, (d, c) in enumerate(zip(deltas, counts)):
-            coords[i] = utils.compute_spot_coordinates(d, c,
-                                                       threshold=threshold, min_distance=min_distance)
+        for i, (d, l) in enumerate(zip(deltas, labels)):
+            coords[i] = utils.compute_spot_coordinates(d, l[:, :, 0], threshold=threshold, min_distance=min_distance)
             coords[i][:, -2:] = coords[i][:, -2:] / scales
         coords = Output(coords, isimage=False, stackable=False, tile_scales=(1.0, 1.0))
 
         if intermediates:
-            y = np.concatenate((y['deltas'], y['labels'], y['counts'][:, :, :, None]), axis=-1)
+            y = np.concatenate((deltas, labels), axis=-1)
             y = np.moveaxis(y, -1, 1)
             return coords, y
         else:
             return coords
 
-    def _process(self, tiles, intermediates):
+    def _process(self, tiles):
 
         tiles = tiles.compute()
-        if tiles.shape[1:3] != (256, 256):
-            tiles = resize(tiles, (tiles.shape[0], 256, 256))
+        if tiles.shape[1:3] != self.input_size:
+            tiles = resize(tiles, (tiles.shape[0], *self.input_size))
 
-        if intermediates:
-            deltas, labels, counts = self._jitted(tiles)
-            deltas = np.asarray(deltas)
-            labels = np.asarray(labels)
-            counts = np.asarray(counts)
-            y = {
-                'deltas': deltas,
-                'labels': labels,
-                'counts': counts
-            }
-        else:
-            deltas, _, counts = self._jitted(tiles)
-            deltas = np.asarray(deltas)
-            counts = np.asarray(counts)
-            y = {
-                'deltas': deltas,
-                'counts': counts
-            }
+        deltas, labels = self._jitted(tiles)
+        deltas = np.asarray(deltas)
+        labels = np.asarray(labels)
 
-        return y
+        return deltas, labels
 
     @staticmethod
-    def _postprocess_stack(y, scales, threshold, min_distance):
+    def _postprocess_stack(deltas, labels, scales, threshold, min_distance):
 
-        deltas = y['deltas']
-        counts = y['counts']
-
-        coords = utils.compute_spot_coordinates(deltas, counts, threshold=threshold, min_distance=min_distance)
+        coords = utils.compute_spot_coordinates(deltas, labels[:, :, :, 0],
+                                                threshold=threshold, min_distance=min_distance)
         coords[:, -2:] = coords[:, -2:] / scales
         coords = Output(coords, isimage=False, stackable=False, tile_scales=(1.0, 1.0))
 
