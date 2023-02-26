@@ -90,19 +90,18 @@ def train_step(state, train_batch, loss_weights, learning_rate):
 
 def train_epoch(state, ds, batch_size, loss_weights, learning_rate, input_size, coords_max_length):
 
-    print(f'epoch: {state.epoch + 1}')
+    print(f'Epoch: {state.epoch + 1}')
 
-    rng, *subrngs = random.split(state.rng, 4)
+    rng, *subrngs = random.split(state.rng, 3)
     state = state.replace(rng=rng)
-    train_ds = transform_dataset(ds['train'], subrngs[0], input_size)
-    valid_ds = transform_dataset(ds['valid'], subrngs[1], input_size)
+    train_ds = transform_dataset(ds['train'], input_size, key=subrngs[0])
+    valid_ds = transform_dataset(ds['valid'], input_size)
 
     train_ds_size = len(train_ds['images'])
     val_ds_size = len(valid_ds['images'])
     n_steps = train_ds_size // batch_size
-    val_n_steps = val_ds_size // batch_size
 
-    perms = random.permutation(subrngs[2], train_ds_size)
+    perms = random.permutation(subrngs[1], train_ds_size)
     perms = perms[:n_steps * batch_size]  # skip incomplete batch
     perms = perms.reshape((n_steps, batch_size))
 
@@ -130,8 +129,9 @@ def train_epoch(state, ds, batch_size, loss_weights, learning_rate, input_size, 
 
     val_batch_metrics = []
     val_epoch_metrics = []
-    for i in range(val_n_steps):
-        val_batch = {k: v[i * batch_size:(i + 1) * batch_size, ...] for k, v in valid_ds.items()}
+    for i in range(val_ds_size):
+
+        val_batch = {k: v[i:i + 1, ...] for k, v in valid_ds.items()}
         val_batch = transform_batch(val_batch, coords_max_length)
         _, (val_metrics, _) = loss_fn(state.params, state.batch_stats, False, val_batch, loss_weights)
         val_metrics = {f'val_{k}': v for k, v in val_metrics.items()}
@@ -180,6 +180,7 @@ def train_model(model_path, dataset_path, dataset_adjustment='normalize',
     else:
         epoch_metrics_log = []
 
+    print('Loading datasets...\n')
     ds = load_datasets(dataset_path, adjustment=dataset_adjustment)
     train_images_shape = ds['train']['images'].shape
     n_train_images = train_images_shape[0]
@@ -202,11 +203,20 @@ def train_model(model_path, dataset_path, dataset_adjustment='normalize',
 
     if next(checkpoint_path.iterdir(), None) is None:
         if model_path.is_file():
+            print(f'Loading existing model weights from {model_path}...\n')
             variables = checkpoints.restore_checkpoint(model_path, None)
         else:
             variables = None
+        print('Creating new TrainState...\n')
         state = create_train_state(rng, input_size, learning_rate, variables)
+        checkpoints.save_checkpoint(
+            ckpt_dir=checkpoint_path,
+            target=state,
+            step=state.epoch,
+            prefix=checkpoint_prefix,
+        )
     else:
+        print(f'Loading latest TrainState from {checkpoint_path}...\n')
         state = create_train_state(rng, input_size, learning_rate)
         state = checkpoints.restore_checkpoint(checkpoint_path, state, prefix=checkpoint_prefix)
 
@@ -223,7 +233,7 @@ def train_model(model_path, dataset_path, dataset_adjustment='normalize',
             target=state,
             step=state.epoch,
             prefix=checkpoint_prefix,
-            keep=10,
+            keep=2,
             keep_every_n_steps=10,
         )
 
