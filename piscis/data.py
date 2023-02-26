@@ -9,9 +9,9 @@ from piscis.utils import remove_duplicate_coords
 from piscis.transforms import batch_normalize, batch_standardize, RandomAugment, subpixel_distance_transform
 
 
-def generate_dataset(path, key, adjustment='normalize',
-                     tile_size=(256, 256), overlap=(0, 0), min_spots=3,
-                     train_size=0.70, valid_size=0.15):
+def generate_dataset(path, key, adjustment=None,
+                     tile_size=(256, 256), overlap=(0, 0), min_spots=1,
+                     train_size=0.70, test_size=0.15):
 
     image_list = []
     coords_list = []
@@ -56,13 +56,13 @@ def generate_dataset(path, key, adjustment='normalize',
     tiled_images = tiled_images[perms]
     tiled_coords = tiled_coords[perms]
 
-    split_indices = np.rint(np.cumsum((train_size, valid_size)) * size).astype(int)
+    split_indices = np.rint(np.cumsum((train_size, test_size)) * size).astype(int)
     x_train = tiled_images[:split_indices[0]]
     y_train = tiled_coords[:split_indices[0]]
-    x_valid = tiled_images[split_indices[0]:split_indices[1]]
-    y_valid = tiled_coords[split_indices[0]:split_indices[1]]
-    x_test = tiled_images[split_indices[1]:]
-    y_test = tiled_coords[split_indices[1]:]
+    x_valid = tiled_images[split_indices[1]:]
+    y_valid = tiled_coords[split_indices[1]:]
+    x_test = tiled_images[split_indices[0]:split_indices[1]]
+    y_test = tiled_coords[split_indices[0]:split_indices[1]]
 
     dataset = {
         'x_train': x_train,
@@ -124,17 +124,24 @@ def load_datasets(path, adjustment=None):
     return ds
 
 
-def transform_dataset(ds, key, input_size, min_spots=1):
+def transform_dataset(ds, input_size, min_spots=1, key=None):
 
-    base_scales = np.ones(len(ds['images']))
+    if key is not None:
 
-    # Create transformer
-    transformer = RandomAugment()
-    transformer.generate_transforms(ds['images'], key, base_scales, input_size)
+        base_scales = np.ones(len(ds['images']))
 
-    # Apply transformations
-    images = transformer.apply_image_transforms(ds['images'], interpolation='bilinear')
-    coords_list = transformer.apply_coord_transforms(ds['coords'], filter_coords=True)
+        # Create transformer
+        transformer = RandomAugment()
+        transformer.generate_transforms(ds['images'], key, base_scales, input_size)
+
+        # Apply transformations
+        images = transformer.apply_image_transforms(ds['images'], interpolation='bilinear')
+        coords_list = transformer.apply_coord_transforms(ds['coords'], filter_coords=True)
+
+    else:
+
+        images = ds['images'].tolist()
+        coords_list = ds['coords'].tolist()
 
     # Remove images with less than min_spots
     counts = np.array([len(coord) for coord in coords_list])
