@@ -46,12 +46,12 @@ def compute_metrics(poly_features, batch, loss_weights):
 
     deltas_pred, labels_pred = poly_features
 
-    rmse, bcel, smoothf1 = spots_loss(deltas_pred, labels_pred,
+    rmse, bce, smoothf1 = spots_loss(deltas_pred, labels_pred,
                                       batch['deltas'], batch['labels'], batch['dilated_labels'])
-    loss = loss_weights['rmse'] * rmse + loss_weights['bcel'] * bcel + loss_weights['smoothf1'] * smoothf1
+    loss = loss_weights['rmse'] * rmse + loss_weights['bce'] * bce + loss_weights['smoothf1'] * smoothf1
     metrics = {
         'rmse': rmse,
-        'bcel': bcel,
+        'bce': bce,
         'smoothf1': smoothf1,
         'loss': loss
     }
@@ -123,7 +123,7 @@ def train_epoch(state, ds, batch_size, loss_weights, learning_rate, input_size, 
 
         summary = (
             f"(train) loss: {epoch_metrics['loss']:>6.4f}, rmse: {epoch_metrics['rmse']:>6.4f}, "
-            f"bcel: {epoch_metrics['bcel']:>6.4f}, smoothf1: {epoch_metrics['smoothf1']:>6.4f}"
+            f"bce: {epoch_metrics['bce']:>6.4f}, smoothf1: {epoch_metrics['smoothf1']:>6.4f}"
         )
         pbar.write(summary, end='\r')
 
@@ -143,9 +143,9 @@ def train_epoch(state, ds, batch_size, loss_weights, learning_rate, input_size, 
 
         summary = (
             f"(train) loss: {epoch_metrics['loss']:>6.4f}, rmse: {epoch_metrics['rmse']:>6.4f}, "
-            f"bcel: {epoch_metrics['bcel']:>6.4f}, smoothf1: {epoch_metrics['smoothf1']:>6.4f} | "
+            f"bce: {epoch_metrics['bce']:>6.4f}, smoothf1: {epoch_metrics['smoothf1']:>6.4f} | "
             f"(valid) loss: {val_epoch_metrics['val_loss']:>6.4f}, rmse: {val_epoch_metrics['val_rmse']:>6.4f}, "
-            f"bcel: {val_epoch_metrics['val_bcel']:>6.4f}, smoothf1: {val_epoch_metrics['val_smoothf1']:>6.4f}"
+            f"bce: {val_epoch_metrics['val_bce']:>6.4f}, smoothf1: {val_epoch_metrics['val_smoothf1']:>6.4f}"
         )
         pbar.write(summary, end='\r')
 
@@ -197,7 +197,7 @@ def train_model(model_path, dataset_path, dataset_adjustment='normalize',
     if loss_weights is None:
         loss_weights = {
             'rmse': 2,
-            'bcel': 1,
+            'bce': 1,
             'smoothf1': 5
         }
 
