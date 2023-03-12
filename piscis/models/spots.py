@@ -69,7 +69,7 @@ class SpotsModel(nn.Module):
             style=self.style,
             aggregate=self.aggregate
         )(x, train=train)
-        gradients = x[:, :, :, :2]
-        semantic = nn.sigmoid(x[:, :, :, 2:3])
+        deltas = x[:, :, :, :2]
+        labels = nn.sigmoid(x[:, :, :, 2:3])
 
-        return gradients, semantic
+        return deltas, labels
