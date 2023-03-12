@@ -7,7 +7,7 @@ from piscis.utils import apply_deltas
 
 def spots_loss(deltas_pred, labels_pred, deltas, labels, dilated_labels, epsilon=1e-7, reduction='mean'):
 
-    vmap_spots_loss = vmap(_spots_loss, in_axes=(0, 0, 0, 0, 0))
+    vmap_spots_loss = vmap(_spots_loss, in_axes=(0, 0, 0, 0, 0, None, None))
     rmse, bce, smoothf1 = vmap_spots_loss(deltas_pred, labels_pred, deltas, labels, dilated_labels, epsilon, reduction)
 
     return jnp.mean(rmse), jnp.mean(bce), jnp.mean(smoothf1)
