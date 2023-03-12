@@ -55,21 +55,19 @@ def mean_squared_error(y_pred, y, reduction='mean'):
     return mse
 
 
-def bce_loss(y_pred, y, pos_weight=None, epsilon=1e-7, reduction='mean'):
+def bce_loss(y_pred, y, pos_weight=1.0, epsilon=1e-7, reduction='mean'):
 
-    if pos_weight is None:
-        pos_weight = 1.0
     bce = -(pos_weight * jnp.log(y_pred + epsilon) * y + jnp.log((1 - y_pred) + epsilon) * (1 - y))
     bce = _reduce_loss(bce, reduction)
 
     return bce
 
 
-def bce_with_logits_loss(y_pred, y, pos_weight=None, reduction='mean'):
+def bce_with_logits_loss(y_pred, y, pos_weight=1.0, reduction='mean'):
 
     neg_abs = -jnp.abs(y_pred)
     bce = jnp.maximum(y_pred, 0) - y_pred * y + jnp.log(1 + jnp.exp(neg_abs))
-    if pos_weight is not None:
+    if pos_weight != 1.0:
         bce = jnp.where(y, pos_weight * bce, bce)
     bce = _reduce_loss(bce, reduction)
 
