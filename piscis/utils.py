@@ -27,27 +27,27 @@ def compute_spot_coordinates(deltas, labels, threshold, min_distance):
     return coords
 
 
-def scanned_colocalize_pixels(deltas, labels, n_iter, kernel_size=(5, 5)):
+def scanned_apply_deltas(deltas, labels, n_iter, kernel_size=(5, 5)):
 
-    carry, _ = scan(lambda c, x: _scanned_colocalize_pixels(c, kernel_size), (deltas, labels), jnp.empty(n_iter))
+    carry, _ = scan(lambda c, x: _scanned_apply_deltas(c, kernel_size), (deltas, labels), jnp.empty(n_iter))
     counts = carry[1]
 
     return counts
 
 
-vmap_scanned_colocalize_pixels = vmap(scanned_colocalize_pixels, in_axes=(0, 0))
+vmap_scanned_apply_deltas = vmap(scanned_apply_deltas, in_axes=(0, 0))
 
 
-def _scanned_colocalize_pixels(carry, kernel_size):
+def _scanned_apply_deltas(carry, kernel_size):
 
     deltas, counts = carry
-    counts = colocalize_pixels(deltas, counts, kernel_size)
+    counts = apply_deltas(deltas, counts, kernel_size)
     carry = deltas, counts
 
     return carry, counts
 
 
-def colocalize_pixels(deltas, labels, kernel_size=(3, 3)):
+def apply_deltas(deltas, labels, kernel_size=(3, 3)):
 
     i, j = jnp.arange(deltas.shape[0]), jnp.arange(deltas.shape[1])
     ii, jj = jnp.meshgrid(i, j, indexing='ij')
@@ -66,7 +66,7 @@ def colocalize_pixels(deltas, labels, kernel_size=(3, 3)):
     return counts
 
 
-vmap_colocalize_pixels = vmap(colocalize_pixels, in_axes=(0, 0, None))
+vmap_apply_deltas = vmap(apply_deltas, in_axes=(0, 0, None))
 
 
 def _count_convergence(convergence, labels, kernel_size, i, j):
@@ -87,18 +87,6 @@ def _search_convergence(convergence, i, j):
     return sources
 
 
-def match_coords(coords, i, set_id, coord_set_ids, checked, threshold):
-
-    distances = np.sqrt(np.sum((coords[i] - coords) ** 2, axis=1))
-    matches = list(np.where(distances < threshold)[0])
-    matches.remove(i)
-    for match in matches:
-        coord_set_ids[match] = set_id
-    checked.append(i)
-
-    return matches
-
-
 def remove_duplicate_coords(coords, threshold=1):
 
     sets = {}
@@ -114,7 +102,7 @@ def remove_duplicate_coords(coords, threshold=1):
             new_set = [i]
             sets[set_id] = new_set
 
-            matches = match_coords(coords, i, set_id, coord_set_ids, checked, threshold)
+            matches = _match_coords(coords, i, set_id, coord_set_ids, checked, threshold)
             new_set.extend(matches)
             to_check = matches.copy()
 
@@ -122,7 +110,7 @@ def remove_duplicate_coords(coords, threshold=1):
 
                 for j in to_check:
 
-                    matches = match_coords(coords, j, set_id, coord_set_ids, checked, threshold)
+                    matches = _match_coords(coords, j, set_id, coord_set_ids, checked, threshold)
                     to_check.remove(j)
                     new_matches = set(matches) - set(new_set)
                     new_set.extend(new_matches)
@@ -139,3 +127,15 @@ def remove_duplicate_coords(coords, threshold=1):
     new_coords = np.array(new_coords)
 
     return new_coords
+
+
+def _match_coords(coords, i, set_id, coord_set_ids, checked, threshold):
+
+    distances = np.sqrt(np.sum((coords[i] - coords) ** 2, axis=1))
+    matches = list(np.where(distances < threshold)[0])
+    matches.remove(i)
+    for match in matches:
+        coord_set_ids[match] = set_id
+    checked.append(i)
+
+    return matches

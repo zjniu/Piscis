@@ -2,7 +2,7 @@ import jax.numpy as jnp
 
 from jax import vmap
 
-from piscis.utils import colocalize_pixels
+from piscis.utils import apply_deltas
 
 
 def spots_loss(deltas_pred, labels_pred, deltas, labels, dilated_labels, epsilon=1e-7, reduction='mean'):
@@ -22,7 +22,7 @@ def _spots_loss(deltas_pred, labels_pred, deltas, labels, dilated_labels, epsilo
     rmse = jnp.sqrt(jnp.sum(((deltas - deltas_pred) * dilated_labels[:, :, None]) ** 2) / jnp.sum(dilated_labels))
     bce = weighted_bce_loss(labels_pred, labels, alpha=0.5, epsilon=epsilon, reduction=reduction)
 
-    counts = colocalize_pixels(deltas_pred * dilated_labels[:, :, None], labels_pred, (3, 3))
+    counts = apply_deltas(deltas_pred * dilated_labels[:, :, None], labels_pred, (3, 3))
 
     tp = jnp.sum(dilated_labels * counts)
     fp = jnp.sum(labels_pred) - tp
