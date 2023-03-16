@@ -23,14 +23,13 @@ class TrainState(train_state.TrainState, ABC):
     rng: Any
 
 
-def create_train_state(rng, input_size, learning_rate, variables=None):
+def create_train_state(rng, input_size, tx, variables=None):
 
     rng, subrng = random.split(rng, 2)
     model = SpotsModel()
 
     if variables is None:
         variables = model.init({'params': subrng}, np.ones((1, *input_size, 1)))
-    tx = optax.adabelief(learning_rate)
 
     return TrainState.create(
         apply_fn=model.apply,
@@ -76,21 +75,21 @@ def loss_fn(params, batch_stats, train, batch, loss_weights):
     return loss, (metrics, mutated_vars)
 
 
-@partial(jit, static_argnums=3)
-def train_step(state, train_batch, loss_weights, learning_rate):
+@jit
+def train_step(state, train_batch, loss_weights):
 
     grad_fn = value_and_grad(loss_fn, has_aux=True)
     (_, (metrics, mutated_vars)), grads = grad_fn(state.params, state.batch_stats, True, train_batch, loss_weights)
     state = state.apply_gradients(grads=grads, batch_stats=mutated_vars['batch_stats'])
-    lr = learning_rate(state.step)
-    metrics['learning_rate'] = lr
 
     return state, metrics
 
 
-def train_epoch(state, ds, batch_size, loss_weights, learning_rate, input_size, coords_max_length):
+def train_epoch(state, ds, batch_size, loss_weights, epoch_learning_rate, input_size, coords_max_length):
 
     print(f'Epoch: {state.epoch + 1}')
+
+    state.opt_state.hyperparams['learning_rate'] = epoch_learning_rate
 
     rng, *subrngs = random.split(state.rng, 3)
     state = state.replace(rng=rng)
@@ -111,7 +110,7 @@ def train_epoch(state, ds, batch_size, loss_weights, learning_rate, input_size, 
     for perm in pbar:
         train_batch = {k: v[perm, ...] for k, v in train_ds.items()}
         train_batch = transform_batch(train_batch, coords_max_length)
-        state, metrics = train_step(state, train_batch, loss_weights, learning_rate)
+        state, metrics = train_step(state, train_batch, loss_weights)
         metrics = {k: float(v) for k, v in metrics.items()}
         batch_metrics.append(metrics)
 
@@ -152,13 +151,16 @@ def train_epoch(state, ds, batch_size, loss_weights, learning_rate, input_size, 
     print('\n')
 
     epoch_metrics = epoch_metrics | val_epoch_metrics
+    epoch_metrics['learning_rate'] = epoch_learning_rate
     state = state.replace(epoch=state.epoch + 1)
 
     return state, batch_metrics, epoch_metrics
 
 
 def train_model(model_path, dataset_path, dataset_adjustment='normalize',
-                n_epochs=100, random_seed=0, batch_size=8, learning_rate=None, loss_weights=None):
+                epochs=200, random_seed=0, batch_size=8, learning_rate=0.01,
+                warmup_epochs=10, decay_epochs=100, decay_rate=0.5, decay_transition_epochs=10,
+                optimizer=None, loss_weights=None):
 
     model_path = Path(model_path)
     model_parent_path = model_path.parent
@@ -183,16 +185,20 @@ def train_model(model_path, dataset_path, dataset_adjustment='normalize',
     print('Loading datasets...\n')
     ds = load_datasets(dataset_path, adjustment=dataset_adjustment)
     train_images_shape = ds['train']['images'].shape
-    n_train_images = train_images_shape[0]
     input_size = train_images_shape[1:3]
-    estimated_steps_per_epoch = n_train_images // batch_size
     coords_max_length = \
         max([len(coords) for coords in ds['train']['coords']] + [len(coords) for coords in ds['valid']['coords']])
 
     rng = random.PRNGKey(random_seed)
 
-    if learning_rate is None:
-        learning_rate = optax.exponential_decay(0.001, estimated_steps_per_epoch, 0.95)
+    warmup = [learning_rate * i / warmup_epochs for i in range(warmup_epochs)]
+    constant = [learning_rate] * (epochs - warmup_epochs - decay_epochs)
+    decay = [learning_rate * decay_rate ** np.ceil(i / decay_transition_epochs) for i in range(1, decay_epochs + 1)]
+    schedule = warmup + constant + decay
+
+    if optimizer is None:
+        optimizer = partial(optax.sgd, momentum=0.9, nesterov=True)
+    tx = optax.inject_hyperparams(optimizer)(learning_rate=learning_rate)
 
     if loss_weights is None:
         loss_weights = {
@@ -208,7 +214,7 @@ def train_model(model_path, dataset_path, dataset_adjustment='normalize',
         else:
             variables = None
         print('Creating new TrainState...\n')
-        state = create_train_state(rng, input_size, learning_rate, variables)
+        state = create_train_state(rng, input_size, tx, variables)
         checkpoints.save_checkpoint(
             ckpt_dir=checkpoint_path,
             target=state,
@@ -217,13 +223,13 @@ def train_model(model_path, dataset_path, dataset_adjustment='normalize',
         )
     else:
         print(f'Loading latest TrainState from {checkpoint_path}...\n')
-        state = create_train_state(rng, input_size, learning_rate)
+        state = create_train_state(rng, input_size, tx)
         state = checkpoints.restore_checkpoint(checkpoint_path, state, prefix=checkpoint_prefix)
 
-    for _ in range(n_epochs):
+    for epoch_learning_rate in schedule:
 
         state, batch_metrics, epoch_metrics = \
-            train_epoch(state, ds, batch_size, loss_weights, learning_rate, input_size, coords_max_length)
+            train_epoch(state, ds, batch_size, loss_weights, epoch_learning_rate, input_size, coords_max_length)
 
         batch_metrics_log += batch_metrics
         epoch_metrics_log += [epoch_metrics]
@@ -233,8 +239,7 @@ def train_model(model_path, dataset_path, dataset_adjustment='normalize',
             target=state,
             step=state.epoch,
             prefix=checkpoint_prefix,
-            keep=2,
-            keep_every_n_steps=10,
+            keep=2
         )
 
         with open(batch_metrics_log_path, 'w') as f_batch_metrics_log:
