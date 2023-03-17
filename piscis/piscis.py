@@ -52,7 +52,7 @@ class Piscis:
         dt = deeptile.load(x, link_data=False, dask=True)
         tile_size = (round(self.input_size[0] / scale), round(self.input_size[1] / scale))
         scales = (np.array([self.input_size]) - 1) / (np.array(tile_size) - 1)
-        tiles = dt.get_tiles(tile_size=tile_size, overlap=(0.1, 0.1)).pad(mode='reflect')
+        tiles = dt.get_tiles(tile_size=tile_size, overlap=(0.1, 0.1)).pad(mode='symmetric')
 
         if x_min is not None:
             tiles = lift(lambda t: (t - x_min) / (x_max - x_min + 1e-7))(tiles)
