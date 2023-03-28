@@ -5,7 +5,7 @@ import numpy as np
 
 from deeptile import lift, Output
 from deeptile.extensions import stitch
-from flax.training import checkpoints
+from flax import serialization
 from jax import jit
 from jax.lib import xla_bridge
 from pathlib import Path
@@ -26,7 +26,10 @@ class Piscis:
 
         self.model_name = model
         self.model = SpotsModel()
-        self.variables = checkpoints.restore_checkpoint(TRAINED_MODELS_DIR.joinpath(model), None)
+
+        with open(TRAINED_MODELS_DIR.joinpath(model), 'rb') as f_model:
+            self.variables = serialization.from_bytes(target=None, encoded_bytes=f_model.read())
+
         self.batch_size = batch_size
 
         if input_size is None:
