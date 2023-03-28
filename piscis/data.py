@@ -164,7 +164,7 @@ def transform_dataset(ds, input_size, min_spots=1, key=None):
 def transform_batch(batch, coords_pad_length=None, num_label_dilations=1):
 
     output_shape = batch['images'].shape[1:3]
-    coords = batch.pop('coords')
+    coords = batch['coords']
 
     deltas, labels, _ = subpixel_distance_transform(coords, coords_pad_length, output_shape)
     labels = np.asarray(labels)
@@ -176,8 +176,11 @@ def transform_batch(batch, coords_pad_length=None, num_label_dilations=1):
                                                     iterations=num_label_dilations)
             dilated_labels.append(dilated_label)
 
-    batch['deltas'] = deltas
-    batch['labels'] = labels
-    batch['dilated_labels'] = np.stack(dilated_labels)
+    transformed_batch = {
+        'images': batch['images'],
+        'deltas': deltas,
+        'labels': labels,
+        'dilated_labels': np.stack(dilated_labels)
+    }
 
-    return batch
+    return transformed_batch
