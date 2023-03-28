@@ -1,26 +1,30 @@
+import jax.numpy as jnp
 import json
 import numpy as np
 import optax
+import orbax.checkpoint
 
 from abc import ABC
 from flax import serialization
-from flax.training import checkpoints, train_state
+from flax.core import frozen_dict
+from flax.training import orbax_utils, train_state
 from functools import partial
 from jax import jit, random, value_and_grad
 from pathlib import Path
 from tqdm.auto import tqdm
 from typing import Any
 
-from piscis.models.spots import SpotsModel
 from piscis.data import load_datasets, transform_batch, transform_dataset
 from piscis.losses import spots_loss
+from piscis.models.spots import SpotsModel
+from piscis.optimizers import adabelief
 
 
 class TrainState(train_state.TrainState, ABC):
 
     batch_stats: Any
-    epoch: int
     rng: Any
+    epoch: Any
 
 
 def create_train_state(rng, input_size, tx, variables=None):
@@ -30,14 +34,16 @@ def create_train_state(rng, input_size, tx, variables=None):
 
     if variables is None:
         variables = model.init({'params': subrng}, np.ones((1, *input_size, 1)))
+    else:
+        variables = frozen_dict.freeze(variables)
 
     return TrainState.create(
         apply_fn=model.apply,
         params=variables['params'],
-        batch_stats=variables['batch_stats'],
-        epoch=-1,
-        rng=rng,
         tx=tx,
+        batch_stats=variables['batch_stats'],
+        rng=rng,
+        epoch=jnp.array(-1, dtype=int),
     )
 
 
@@ -89,7 +95,7 @@ def train_epoch(state, ds, batch_size, loss_weights, epoch_learning_rate, input_
 
     print(f'Epoch: {state.epoch + 1}')
 
-    state.opt_state.hyperparams['learning_rate'] = epoch_learning_rate
+    state.opt_state.hyperparams['learning_rate'] = jnp.array(epoch_learning_rate, dtype=float)
 
     rng, *subrngs = random.split(state.rng, 3)
     state = state.replace(rng=rng)
@@ -97,7 +103,7 @@ def train_epoch(state, ds, batch_size, loss_weights, epoch_learning_rate, input_
     valid_ds = transform_dataset(ds['valid'], input_size)
 
     train_ds_size = len(train_ds['images'])
-    val_ds_size = len(valid_ds['images'])
+    valid_ds_size = len(valid_ds['images'])
     n_steps = train_ds_size // batch_size
 
     perms = random.permutation(subrngs[1], train_ds_size)
@@ -106,8 +112,9 @@ def train_epoch(state, ds, batch_size, loss_weights, epoch_learning_rate, input_
 
     batch_metrics = []
     epoch_metrics = {}
-    pbar = tqdm(perms, total=n_steps)
-    for perm in pbar:
+    train_pbar = tqdm(perms, total=n_steps)
+    for perm in train_pbar:
+
         train_batch = {k: v[perm, ...] for k, v in train_ds.items()}
         train_batch = transform_batch(train_batch, coords_max_length)
         state, metrics = train_step(state, train_batch, loss_weights)
@@ -120,15 +127,16 @@ def train_epoch(state, ds, batch_size, loss_weights, epoch_learning_rate, input_
             for k in batch_metrics[0]}
         epoch_metrics['n_steps'] = n_steps
 
-        summary = (
+        train_summary = (
             f"(train) loss: {epoch_metrics['loss']:>6.4f}, rmse: {epoch_metrics['rmse']:>6.4f}, "
             f"bce: {epoch_metrics['bce']:>6.4f}, smoothf1: {epoch_metrics['smoothf1']:>6.4f}"
         )
-        pbar.write(summary, end='\r')
+        train_pbar.set_postfix_str(train_summary, refresh=False)
 
     val_batch_metrics = []
     val_epoch_metrics = []
-    for i in range(val_ds_size):
+    valid_pbar = tqdm(range(valid_ds_size), total=valid_ds_size)
+    for i in valid_pbar:
 
         val_batch = {k: v[i:i + 1, ...] for k, v in valid_ds.items()}
         val_batch = transform_batch(val_batch, coords_max_length)
@@ -140,15 +148,11 @@ def train_epoch(state, ds, batch_size, loss_weights, epoch_learning_rate, input_
             k: np.mean([metrics[k] for metrics in val_batch_metrics]).astype(float)
             for k in val_batch_metrics[0]}
 
-        summary = (
-            f"(train) loss: {epoch_metrics['loss']:>6.4f}, rmse: {epoch_metrics['rmse']:>6.4f}, "
-            f"bce: {epoch_metrics['bce']:>6.4f}, smoothf1: {epoch_metrics['smoothf1']:>6.4f} | "
+        valid_summary = (
             f"(valid) loss: {val_epoch_metrics['val_loss']:>6.4f}, rmse: {val_epoch_metrics['val_rmse']:>6.4f}, "
             f"bce: {val_epoch_metrics['val_bce']:>6.4f}, smoothf1: {val_epoch_metrics['val_smoothf1']:>6.4f}"
         )
-        pbar.write(summary, end='\r')
-
-    print('\n')
+        valid_pbar.set_postfix_str(valid_summary, refresh=False)
 
     epoch_metrics = epoch_metrics | val_epoch_metrics
     epoch_metrics['learning_rate'] = epoch_learning_rate
@@ -158,14 +162,13 @@ def train_epoch(state, ds, batch_size, loss_weights, epoch_learning_rate, input_
 
 
 def train_model(model_path, dataset_path, dataset_adjustment='normalize',
-                epochs=200, random_seed=0, batch_size=8, learning_rate=0.01,
+                epochs=200, random_seed=0, batch_size=4, learning_rate=0.001,
                 warmup_epochs=10, decay_epochs=100, decay_rate=0.5, decay_transition_epochs=10,
                 optimizer=None, loss_weights=None):
 
     model_path = Path(model_path)
     model_parent_path = model_path.parent
     model_name = model_path.stem
-    checkpoint_prefix = f'{model_name}_ckpt'
     checkpoint_path = model_parent_path.joinpath(f'{model_name}_ckpts')
     checkpoint_path.mkdir(parents=True, exist_ok=True)
     batch_metrics_log_path = model_parent_path.joinpath(f'{model_name}_batch_metrics_log')
@@ -202,29 +205,37 @@ def train_model(model_path, dataset_path, dataset_adjustment='normalize',
 
     if loss_weights is None:
         loss_weights = {
-            'rmse': 2,
-            'bce': 1,
-            'smoothf1': 5
+            'rmse': 0.4,
+            'bce': 0.2,
+            'smoothf1': 1
         }
 
-    if next(checkpoint_path.iterdir(), None) is None:
-        if model_path.is_file():
-            print(f'Loading existing model weights from {model_path}...\n')
-            variables = checkpoints.restore_checkpoint(model_path, None)
-        else:
-            variables = None
-        print('Creating new TrainState...\n')
-        state = create_train_state(rng, input_size, tx, variables)
-        checkpoints.save_checkpoint(
-            ckpt_dir=checkpoint_path,
-            target=state,
-            step=state.epoch,
-            prefix=checkpoint_prefix,
-        )
+    mgr_options = orbax.checkpoint.CheckpointManagerOptions(max_to_keep=2)
+    handlers = {'state': orbax.checkpoint.PyTreeCheckpointer()}
+    ckpt_mgr = orbax.checkpoint.CheckpointManager(
+        directory=checkpoint_path,
+        checkpointers=handlers,
+        options=mgr_options
+    )
+
+    if (next(checkpoint_path.iterdir(), None) is None) and model_path.is_file():
+        print(f'Loading existing model weights from {model_path}...\n')
+        with open(model_path, 'rb') as f_model:
+            variables = serialization.from_bytes(target=None, encoded_bytes=f_model.read())
     else:
-        print(f'Loading latest TrainState from {checkpoint_path}...\n')
-        state = create_train_state(rng, input_size, tx)
-        state = checkpoints.restore_checkpoint(checkpoint_path, state, prefix=checkpoint_prefix)
+        variables = None
+
+    print('Creating new TrainState...\n')
+    state = create_train_state(rng, input_size, tx, variables)
+    latest_epoch = ckpt_mgr.latest_step()
+    if latest_epoch is not None:
+        print(f'Loading latest checkpoint from {checkpoint_path}...\n')
+        restore_args = orbax_utils.restore_args_from_target(state, mesh=None)
+        state = ckpt_mgr.restore(
+            step=latest_epoch,
+            items={'state': state},
+            restore_kwargs={'state': {'restore_args': restore_args}}
+        )['state']
 
     for epoch_learning_rate in schedule:
 
@@ -234,12 +245,11 @@ def train_model(model_path, dataset_path, dataset_adjustment='normalize',
         batch_metrics_log += batch_metrics
         epoch_metrics_log += [epoch_metrics]
 
-        checkpoints.save_checkpoint(
-            ckpt_dir=checkpoint_path,
-            target=state,
+        save_args = orbax_utils.save_args_from_target(state)
+        ckpt_mgr.save(
             step=state.epoch,
-            prefix=checkpoint_prefix,
-            keep=2
+            items={'state': state},
+            save_kwargs={'state': {'save_args': save_args}}
         )
 
         with open(batch_metrics_log_path, 'w') as f_batch_metrics_log:
