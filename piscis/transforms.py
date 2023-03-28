@@ -172,6 +172,9 @@ def subpixel_distance_transform(coords_list, coords_pad_length=None, shape=(256,
 
     for i, coords in enumerate(coords_list):
 
+        coords = coords[(coords[:, 0] >= -0.5) & (coords[:, 0] <= shape[0] - 0.5) &
+                        (coords[:, 1] >= -0.5) & (coords[:, 1] <= shape[1] - 0.5)]
+
         padding = ((0, coords_pad_length - len(coords)), (0, 0))
         subpixel_coords[i] = np.pad(coords, padding, constant_values=-1)
         unpadded_rounded_coords = np.rint(coords).astype(int)
