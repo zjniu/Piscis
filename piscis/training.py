@@ -11,7 +11,7 @@ from flax.training import orbax_utils, train_state
 from functools import partial
 from jax import jit, random, value_and_grad
 from pathlib import Path
-from tqdm.auto import tqdm
+from tqdm import tqdm
 from typing import Any
 
 from piscis.data import load_datasets, transform_batch, transform_dataset
@@ -93,7 +93,7 @@ def train_step(state, train_batch, loss_weights):
 
 def train_epoch(state, ds, batch_size, loss_weights, epoch_learning_rate, input_size, coords_max_length):
 
-    print(f'Epoch: {state.epoch + 1}')
+    print(f'Epoch {state.epoch + 1}:')
 
     state.opt_state.hyperparams['learning_rate'] = jnp.array(epoch_learning_rate, dtype=float)
 
@@ -105,6 +105,7 @@ def train_epoch(state, ds, batch_size, loss_weights, epoch_learning_rate, input_
     train_ds_size = len(train_ds['images'])
     valid_ds_size = len(valid_ds['images'])
     n_steps = train_ds_size // batch_size
+    pbar = tqdm(total=n_steps)
 
     perms = random.permutation(subrngs[1], train_ds_size)
     perms = perms[:n_steps * batch_size]  # skip incomplete batch
@@ -112,8 +113,7 @@ def train_epoch(state, ds, batch_size, loss_weights, epoch_learning_rate, input_
 
     batch_metrics = []
     epoch_metrics = {}
-    train_pbar = tqdm(perms, total=n_steps)
-    for perm in train_pbar:
+    for perm in perms:
 
         train_batch = {k: v[perm, ...] for k, v in train_ds.items()}
         train_batch = transform_batch(train_batch, coords_max_length)
@@ -127,16 +127,17 @@ def train_epoch(state, ds, batch_size, loss_weights, epoch_learning_rate, input_
             for k in batch_metrics[0]}
         epoch_metrics['n_steps'] = n_steps
 
-        train_summary = (
+        summary = (
             f"(train) loss: {epoch_metrics['loss']:>6.4f}, rmse: {epoch_metrics['rmse']:>6.4f}, "
             f"bce: {epoch_metrics['bce']:>6.4f}, smoothf1: {epoch_metrics['smoothf1']:>6.4f}"
         )
-        train_pbar.set_postfix_str(train_summary, refresh=False)
+
+        pbar.update(1)
+        pbar.set_postfix_str(summary)
 
     val_batch_metrics = []
     val_epoch_metrics = []
-    valid_pbar = tqdm(range(valid_ds_size), total=valid_ds_size)
-    for i in valid_pbar:
+    for i in range(valid_ds_size):
 
         val_batch = {k: v[i:i + 1, ...] for k, v in valid_ds.items()}
         val_batch = transform_batch(val_batch, coords_max_length)
@@ -148,11 +149,16 @@ def train_epoch(state, ds, batch_size, loss_weights, epoch_learning_rate, input_
             k: np.mean([metrics[k] for metrics in val_batch_metrics]).astype(float)
             for k in val_batch_metrics[0]}
 
-        valid_summary = (
+        summary = (
             f"(valid) loss: {val_epoch_metrics['val_loss']:>6.4f}, rmse: {val_epoch_metrics['val_rmse']:>6.4f}, "
-            f"bce: {val_epoch_metrics['val_bce']:>6.4f}, smoothf1: {val_epoch_metrics['val_smoothf1']:>6.4f}"
+            f"bce: {val_epoch_metrics['val_bce']:>6.4f}, smoothf1: {val_epoch_metrics['val_smoothf1']:>6.4f} | "
+            f"(train) loss: {epoch_metrics['loss']:>6.4f}, rmse: {epoch_metrics['rmse']:>6.4f}, "
+            f"bce: {epoch_metrics['bce']:>6.4f}, smoothf1: {epoch_metrics['smoothf1']:>6.4f}"
         )
-        valid_pbar.set_postfix_str(valid_summary, refresh=False)
+
+        pbar.set_postfix_str(summary)
+
+    pbar.close()
 
     epoch_metrics = epoch_metrics | val_epoch_metrics
     epoch_metrics['learning_rate'] = epoch_learning_rate
@@ -185,7 +191,7 @@ def train_model(model_path, dataset_path, dataset_adjustment='normalize',
     else:
         epoch_metrics_log = []
 
-    print('Loading datasets...\n')
+    print('Loading datasets...')
     ds = load_datasets(dataset_path, adjustment=dataset_adjustment)
     train_images_shape = ds['train']['images'].shape
     input_size = train_images_shape[1:3]
@@ -211,25 +217,25 @@ def train_model(model_path, dataset_path, dataset_adjustment='normalize',
         }
 
     mgr_options = orbax.checkpoint.CheckpointManagerOptions(max_to_keep=2)
-    handlers = {'state': orbax.checkpoint.PyTreeCheckpointer()}
+    checkpointers = {'state': orbax.checkpoint.PyTreeCheckpointer()}
     ckpt_mgr = orbax.checkpoint.CheckpointManager(
         directory=checkpoint_path,
-        checkpointers=handlers,
+        checkpointers=checkpointers,
         options=mgr_options
     )
 
     if (next(checkpoint_path.iterdir(), None) is None) and model_path.is_file():
-        print(f'Loading existing model weights from {model_path}...\n')
+        print(f'Loading existing model weights from {model_path}...')
         with open(model_path, 'rb') as f_model:
             variables = serialization.from_bytes(target=None, encoded_bytes=f_model.read())
     else:
         variables = None
 
-    print('Creating new TrainState...\n')
+    print('Creating new TrainState...')
     state = create_train_state(rng, input_size, tx, variables)
     latest_epoch = ckpt_mgr.latest_step()
     if latest_epoch is not None:
-        print(f'Loading latest checkpoint from {checkpoint_path}...\n')
+        print(f'Loading latest checkpoint from {checkpoint_path}...')
         restore_args = orbax_utils.restore_args_from_target(state, mesh=None)
         state = ckpt_mgr.restore(
             step=latest_epoch,
