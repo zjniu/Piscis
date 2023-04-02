@@ -17,7 +17,6 @@ from typing import Any
 from piscis.data import load_datasets, transform_batch, transform_dataset
 from piscis.losses import spots_loss
 from piscis.models.spots import SpotsModel
-from piscis.optimizers import adabelief
 
 
 class TrainState(train_state.TrainState, ABC):
@@ -47,45 +46,43 @@ def create_train_state(rng, input_size, tx, variables=None):
     )
 
 
-def compute_metrics(poly_features, batch, loss_weights):
+def compute_metrics(deltas_pred, labels_pred, batch, loss_weights):
 
-    deltas_pred, labels_pred = poly_features
-
-    rmse, bce, smoothf1 = spots_loss(deltas_pred, labels_pred,
-                                      batch['deltas'], batch['labels'], batch['dilated_labels'])
-    loss = loss_weights['rmse'] * rmse + loss_weights['bce'] * bce + loss_weights['smoothf1'] * smoothf1
+    rmse, bce, sf1 = spots_loss(deltas_pred, labels_pred, batch['deltas'], batch['labels'], batch['dilated_labels'])
+    loss = loss_weights['rmse'] * rmse + loss_weights['bce'] * bce + loss_weights['sf1'] * sf1
     metrics = {
         'rmse': rmse,
         'bce': bce,
-        'smoothf1': smoothf1,
+        'sf1': sf1,
         'loss': loss
     }
 
     return metrics
 
 
-@partial(jit, static_argnums=2)
-def loss_fn(params, batch_stats, train, batch, loss_weights):
+@partial(jit, static_argnums=4)
+def loss_fn(params, batch_stats, batch, loss_weights, train):
 
     variables = {'params': params, 'batch_stats': batch_stats}
     images = batch['images']
 
     if train:
-        poly_features, mutated_vars = SpotsModel().apply(variables, images, train=train, mutable=['batch_stats'])
+        (deltas_pred, labels_pred), mutated_vars = \
+            SpotsModel().apply(variables, images, train=train, mutable=['batch_stats'])
     else:
-        poly_features = SpotsModel().apply(variables, images, train=train)
+        deltas_pred, labels_pred = SpotsModel().apply(variables, images, train=train)
         mutated_vars = None
-    metrics = compute_metrics(poly_features, batch, loss_weights)
+    metrics = compute_metrics(deltas_pred, labels_pred, batch, loss_weights)
     loss = metrics['loss']
 
     return loss, (metrics, mutated_vars)
 
 
 @jit
-def train_step(state, train_batch, loss_weights):
+def train_step(state, batch, loss_weights):
 
     grad_fn = value_and_grad(loss_fn, has_aux=True)
-    (_, (metrics, mutated_vars)), grads = grad_fn(state.params, state.batch_stats, True, train_batch, loss_weights)
+    (_, (metrics, mutated_vars)), grads = grad_fn(state.params, state.batch_stats, batch, loss_weights, train=True)
     state = state.apply_gradients(grads=grads, batch_stats=mutated_vars['batch_stats'])
 
     return state, metrics
@@ -98,7 +95,6 @@ def train_epoch(state, ds, batch_size, loss_weights, epoch_learning_rate, input_
     state.opt_state.hyperparams['learning_rate'] = jnp.array(epoch_learning_rate, dtype=float)
 
     rng, *subrngs = random.split(state.rng, 3)
-    state = state.replace(rng=rng)
     train_ds = transform_dataset(ds['train'], input_size, key=subrngs[0])
     valid_ds = transform_dataset(ds['valid'], input_size)
 
@@ -129,7 +125,7 @@ def train_epoch(state, ds, batch_size, loss_weights, epoch_learning_rate, input_
 
         summary = (
             f"(train) loss: {epoch_metrics['loss']:>6.4f}, rmse: {epoch_metrics['rmse']:>6.4f}, "
-            f"bce: {epoch_metrics['bce']:>6.4f}, smoothf1: {epoch_metrics['smoothf1']:>6.4f}"
+            f"bce: {epoch_metrics['bce']:>6.4f}, sf1: {epoch_metrics['sf1']:>6.4f}"
         )
 
         pbar.update(1)
@@ -141,7 +137,7 @@ def train_epoch(state, ds, batch_size, loss_weights, epoch_learning_rate, input_
 
         val_batch = {k: v[i:i + 1, ...] for k, v in valid_ds.items()}
         val_batch = transform_batch(val_batch, coords_max_length)
-        _, (val_metrics, _) = loss_fn(state.params, state.batch_stats, False, val_batch, loss_weights)
+        _, (val_metrics, _) = loss_fn(state.params, state.batch_stats, val_batch, loss_weights, train=False)
         val_metrics = {f'val_{k}': v for k, v in val_metrics.items()}
         val_batch_metrics.append(val_metrics)
 
@@ -151,9 +147,9 @@ def train_epoch(state, ds, batch_size, loss_weights, epoch_learning_rate, input_
 
         summary = (
             f"(valid) loss: {val_epoch_metrics['val_loss']:>6.4f}, rmse: {val_epoch_metrics['val_rmse']:>6.4f}, "
-            f"bce: {val_epoch_metrics['val_bce']:>6.4f}, smoothf1: {val_epoch_metrics['val_smoothf1']:>6.4f} | "
+            f"bce: {val_epoch_metrics['val_bce']:>6.4f}, sf1: {val_epoch_metrics['val_sf1']:>6.4f} | "
             f"(train) loss: {epoch_metrics['loss']:>6.4f}, rmse: {epoch_metrics['rmse']:>6.4f}, "
-            f"bce: {epoch_metrics['bce']:>6.4f}, smoothf1: {epoch_metrics['smoothf1']:>6.4f}"
+            f"bce: {epoch_metrics['bce']:>6.4f}, sf1: {epoch_metrics['sf1']:>6.4f}"
         )
 
         pbar.set_postfix_str(summary)
@@ -163,6 +159,7 @@ def train_epoch(state, ds, batch_size, loss_weights, epoch_learning_rate, input_
     epoch_metrics = epoch_metrics | val_epoch_metrics
     epoch_metrics['learning_rate'] = epoch_learning_rate
     state = state.replace(epoch=state.epoch + 1)
+    state = state.replace(rng=rng)
 
     return state, batch_metrics, epoch_metrics
 
@@ -213,7 +210,7 @@ def train_model(model_path, dataset_path, dataset_adjustment='normalize',
         loss_weights = {
             'rmse': 0.4,
             'bce': 0.2,
-            'smoothf1': 1
+            'sf1': 1.0
         }
 
     mgr_options = orbax.checkpoint.CheckpointManagerOptions(max_to_keep=2)
