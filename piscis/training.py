@@ -11,7 +11,7 @@ from flax.training import orbax_utils, train_state
 from functools import partial
 from jax import jit, random, value_and_grad
 from pathlib import Path
-from tqdm import tqdm
+from tqdm.auto import tqdm
 from typing import Any
 
 from piscis.data import load_datasets, transform_batch, transform_dataset

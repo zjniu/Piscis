@@ -8,21 +8,28 @@ from piscis.utils import apply_deltas
 def spots_loss(deltas_pred, labels_pred, deltas, labels, dilated_labels, epsilon=1e-7, reduction='mean'):
 
     vmap_spots_loss = vmap(_spots_loss, in_axes=(0, 0, 0, 0, 0, None, None))
-    rmse, bce, smoothf1 = vmap_spots_loss(deltas_pred, labels_pred, deltas, labels, dilated_labels, epsilon, reduction)
+    rmse, bce, sf1 = vmap_spots_loss(deltas_pred, labels_pred, deltas, labels, dilated_labels, epsilon, reduction)
 
-    return jnp.mean(rmse), jnp.mean(bce), jnp.mean(smoothf1)
+    return jnp.mean(rmse), jnp.mean(bce), jnp.mean(sf1)
 
 
 def _spots_loss(deltas_pred, labels_pred, deltas, labels, dilated_labels, epsilon, reduction):
 
+    rmse = jnp.sqrt(jnp.sum(((deltas - deltas_pred) * dilated_labels) ** 2) / jnp.sum(dilated_labels))
+    bce = weighted_bce_loss(labels_pred, labels, alpha=0.5, epsilon=epsilon, reduction=reduction)
+    sf1 = smoothf1_loss(deltas_pred, labels_pred, labels, dilated_labels, epsilon=epsilon)
+
+    return rmse, bce, sf1
+
+
+def smoothf1_loss(deltas_pred, labels_pred, labels, dilated_labels, epsilon=1e-7):
+
+    deltas_pred = deltas_pred * dilated_labels
     labels_pred = labels_pred[:, :, 0]
     labels = labels[:, :, 0]
     dilated_labels = dilated_labels[:, :, 0]
 
-    rmse = jnp.sqrt(jnp.sum(((deltas - deltas_pred) * dilated_labels[:, :, None]) ** 2) / jnp.sum(dilated_labels))
-    bce = weighted_bce_loss(labels_pred, labels, alpha=0.5, epsilon=epsilon, reduction=reduction)
-
-    counts = apply_deltas(deltas_pred * dilated_labels[:, :, None], labels_pred, (3, 3))
+    counts = apply_deltas(deltas_pred, labels_pred, (3, 3))
 
     tp = jnp.sum(dilated_labels * counts)
     fp = jnp.sum(labels_pred) - tp
@@ -32,11 +39,9 @@ def _spots_loss(deltas_pred, labels_pred, deltas, labels, dilated_labels, epsilo
     colocalization_area = tp / (num_captured + epsilon)
     fn = num_uncaptured * colocalization_area
 
-    precision = tp / (tp + fp + epsilon)
-    recall = tp / (tp + fn + epsilon)
-    smoothf1 = -2 * precision * recall / (precision + recall + epsilon)
+    sf1 = -2 * tp / (2 * tp + fp + fn + epsilon)
 
-    return rmse, bce, smoothf1
+    return sf1
 
 
 def dice_loss(y_pred, y, smooth: int = 1):
