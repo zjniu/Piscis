@@ -169,6 +169,9 @@ def train_model(model_path, dataset_path, dataset_adjustment='normalize',
                 warmup_epochs=10, decay_epochs=100, decay_rate=0.5, decay_transition_epochs=10,
                 optimizer=None, loss_weights=None):
 
+    if warmup_epochs + decay_epochs > epochs:
+        raise ValueError('warmup_epochs + decay_epochs cannot be greater than epochs.')
+
     model_path = Path(model_path)
     model_parent_path = model_path.parent
     model_name = model_path.stem
