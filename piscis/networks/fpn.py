@@ -168,7 +168,7 @@ class FPN(nn.Module):
 
     encoder: ModuleDef
     encoder_levels: Sequence[int]
-    features: int = 3
+    features: int
     kernel_size: Sequence[int] = (3, 3)
     style: bool = True
     aggregate: str = 'sum'
