@@ -105,6 +105,8 @@ class RandomAugment:
                 transformed_image = cv.warpAffine(image, M=affine, dsize=self.output_shape, flags=cv.INTER_NEAREST)
             elif interpolation == 'bilinear':
                 transformed_image = cv.warpAffine(image, M=affine, dsize=self.output_shape, flags=cv.INTER_LINEAR)
+            else:
+                raise ValueError('Interpolation mode not supported.')
 
             # Random flip
             if flip0:
