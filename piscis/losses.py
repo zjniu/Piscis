@@ -9,8 +9,11 @@ def spots_loss(deltas_pred, labels_pred, deltas, labels, dilated_labels, epsilon
 
     vmap_spots_loss = vmap(_spots_loss, in_axes=(0, 0, 0, 0, 0, None, None))
     rmse, bce, sf1 = vmap_spots_loss(deltas_pred, labels_pred, deltas, labels, dilated_labels, epsilon, reduction)
+    rmse = _reduce_loss(rmse, reduction)
+    bce = _reduce_loss(bce, reduction)
+    sf1 = _reduce_loss(sf1, reduction)
 
-    return jnp.mean(rmse), jnp.mean(bce), jnp.mean(sf1)
+    return rmse, bce, sf1
 
 
 def _spots_loss(deltas_pred, labels_pred, deltas, labels, dilated_labels, epsilon, reduction):
