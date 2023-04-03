@@ -144,7 +144,7 @@ def batch_standardize(images, epsilon=1e-7):
 
     standardized_images = []
     for image in images:
-        standardized_images.append(normalize(image, epsilon))
+        standardized_images.append(standardize(image, epsilon))
     standardized_images = np.stack(standardized_images)
 
     return standardized_images
