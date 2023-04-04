@@ -1,4 +1,5 @@
 import jax.numpy as jnp
+
 from flax import linen as nn
 from functools import partial
 from typing import Any, Callable, Sequence, Union

@@ -1,4 +1,5 @@
 import jax.numpy as jnp
+
 from flax import linen as nn
 from functools import partial
 from jax.image import resize
