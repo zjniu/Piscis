@@ -161,26 +161,29 @@ def transform_dataset(ds, input_size, min_spots=1, key=None):
     return transformed_ds
 
 
-def transform_batch(batch, coords_pad_length=None, num_label_dilations=1):
+def transform_batch(batch, coords_pad_length=None, dilation_iterations=1):
 
     output_shape = batch['images'].shape[1:3]
     coords = batch['coords']
 
     deltas, labels, _ = subpixel_distance_transform(coords, coords_pad_length, output_shape)
     labels = np.asarray(labels)
-    dilated_labels = []
 
-    if num_label_dilations > 0:
+    if dilation_iterations > 0:
+        dilated_labels = []
+        structure = np.ones((3, 3, 1), dtype=bool)
         for label in labels:
-            dilated_label = ndimage.binary_dilation(label, structure=np.ones((3, 3, 1), dtype=bool),
-                                                    iterations=num_label_dilations)
+            dilated_label = ndimage.binary_dilation(label, structure=structure, iterations=dilation_iterations)
             dilated_labels.append(dilated_label)
+        dilated_labels = np.stack(dilated_labels)
+    else:
+        dilated_labels = labels
 
     transformed_batch = {
         'images': batch['images'],
         'deltas': deltas,
         'labels': labels,
-        'dilated_labels': np.stack(dilated_labels)
+        'dilated_labels': dilated_labels
     }
 
     return transformed_batch
