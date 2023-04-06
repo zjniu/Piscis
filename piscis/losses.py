@@ -75,8 +75,7 @@ def bce_with_logits_loss(y_pred, y, pos_weight=1.0, reduction='mean'):
 
     neg_abs = -jnp.abs(y_pred)
     bce = jnp.maximum(y_pred, 0) - y_pred * y + jnp.log(1 + jnp.exp(neg_abs))
-    if pos_weight != 1.0:
-        bce = jnp.where(y, pos_weight * bce, bce)
+    bce = jnp.where(y, pos_weight * bce, bce)
     bce = _reduce_loss(bce, reduction)
 
     return bce
