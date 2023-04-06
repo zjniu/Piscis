@@ -13,7 +13,7 @@ class Conv(nn.Module):
     kernel_size: Sequence[int]
     conv: ModuleDef
     bn: ModuleDef
-    act: Callable | None
+    act: Union[None, Callable]
     layers: Sequence[str]
 
     @nn.compact
