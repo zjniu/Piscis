@@ -17,6 +17,7 @@ from typing import Any
 from piscis.data import load_datasets, transform_batch, transform_dataset
 from piscis.losses import spots_loss
 from piscis.models.spots import SpotsModel
+from piscis.optimizers import adabelief
 
 
 class TrainState(train_state.TrainState, ABC):
@@ -206,7 +207,7 @@ def train_model(model_path, dataset_path, dataset_adjustment='normalize',
     schedule = warmup + constant + decay
 
     if optimizer is None:
-        optimizer = partial(optax.sgd, momentum=0.9, nesterov=True)
+        optimizer = partial(adabelief, eps=1e-8, weight_decay=1e-5)
     tx = optax.inject_hyperparams(optimizer)(learning_rate=learning_rate)
 
     if loss_weights is None:
