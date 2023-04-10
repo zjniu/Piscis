@@ -12,7 +12,7 @@ from functools import partial
 from jax import jit, random, value_and_grad
 from pathlib import Path
 from tqdm.auto import tqdm
-from typing import Any
+from typing import Any, Dict, List, Optional, Tuple
 
 from piscis.data import load_datasets, transform_batch, transform_dataset
 from piscis.losses import spots_loss
@@ -22,35 +22,110 @@ from piscis.optimizers import adabelief
 
 class TrainState(train_state.TrainState, ABC):
 
+    """
+    TrainState class used to store the current state of model during training.
+    Inherits from train_state.TrainState class provided by Flax and adds additional attributes.
+
+    Attributes
+    ----------
+    batch_stats : Any
+        Batch statistics used for normalization.
+    key : Any
+        Random Key used for training.
+    epoch : Any
+        Current epoch number.
+    """
+
     batch_stats: Any
-    rng: Any
+    key: Any
     epoch: Any
 
 
-def create_train_state(rng, input_size, tx, variables=None):
+def create_train_state(
+        key: jnp.ndarray,
+        input_size: Tuple[int, int],
+        tx: optax.GradientTransformation,
+        variables: Optional[Dict] = None
+) -> TrainState:
 
-    rng, subrng = random.split(rng, 2)
+    """
+    Create new TrainState object.
+
+    Parameters
+    ----------
+    key : jnp.ndarray
+        Random key used for initialization and training.
+    input_size : Tuple[int, int]
+        Size of input images.
+    tx : optax.GradientTransformation
+        Optax optimizer used for training.
+    variables : Optional[Dict]
+        Model variables.
+
+    Returns
+    -------
+    state : TrainState
+        New TrainState object.
+    """
+
+    # Split random key.
+    key, subkey = random.split(key, 2)
+
+    # Initialize model.
     model = SpotsModel()
 
+    # Initialize parameters.
     if variables is None:
-        variables = model.init({'params': subrng}, np.ones((1, *input_size, 1)))
+        variables = model.init({'params': subkey}, np.ones((1, *input_size, 1)))
     else:
         variables = frozen_dict.freeze(variables)
 
-    return TrainState.create(
+    # Create TrainState object.
+    state = TrainState.create(
         apply_fn=model.apply,
         params=variables['params'],
         tx=tx,
         batch_stats=variables['batch_stats'],
-        rng=rng,
+        key=key,
         epoch=jnp.array(-1, dtype=int),
     )
 
+    return state
 
-def compute_metrics(deltas_pred, labels_pred, batch, loss_weights):
+def compute_metrics(
+        deltas_pred: jnp.ndarray,
+        labels_pred: jnp.ndarray,
+        batch: Dict[str, jnp.ndarray],
+        loss_weights: Dict[str, float]
+) -> Dict[str, jnp.ndarray]:
 
+    """
+    Compute training metrics.
+
+    Parameters
+    ----------
+    deltas_pred : jnp.ndarray
+        Predicted deltas.
+    labels_pred : jnp.ndarray
+        Predicted labels.
+    batch : Dict[str, jnp.ndarray]
+        Dictionary containing input image and target arrays.
+    loss_weights : Dict[str, float]
+        Weights for different loss terms.
+
+    Returns
+    -------
+    metrics : Dict[str, jnp.ndarray]
+        Dictionary containing rmse, bce, sf1, and overall loss values.
+    """
+
+    # Compute losses.
     rmse, bce, sf1 = spots_loss(deltas_pred, labels_pred, batch['deltas'], batch['labels'], batch['dilated_labels'])
+
+    # Compute overall loss.
     loss = loss_weights['rmse'] * rmse + loss_weights['bce'] * bce + loss_weights['sf1'] * sf1
+
+    # Create metrics dictionary.
     metrics = {
         'rmse': rmse,
         'bce': bce,
@@ -62,73 +137,180 @@ def compute_metrics(deltas_pred, labels_pred, batch, loss_weights):
 
 
 @partial(jit, static_argnums=4)
-def loss_fn(params, batch_stats, batch, loss_weights, train):
+def loss_fn(
+        params: Any,
+        batch_stats: Any,
+        batch: Dict[str, jnp.ndarray],
+        loss_weights: Dict[str, float],
+        train: bool
+) -> Tuple[jnp.ndarray, Tuple[Dict[str, jnp.ndarray], Dict]]:
+
+    """
+    Computes loss and metrics for a given batch.
+
+    Parameters
+    ----------
+    params : Any
+        Model parameters.
+    batch_stats : Any
+        Batch statistics used for normalization.
+    batch : Dict[str, jnp.ndarray]
+        Dictionary containing input images and target arrays.
+    loss_weights : Dict[str, float]
+        Weights for different loss terms.
+    train : bool
+        Whether model is being trained.
+
+    Returns
+    -------
+    loss : jnp.ndarray
+        Overall loss value.
+    aux : Tuple[Dict[str, jnp.ndarray], Dict]]
+        Auxiliary containing metrics and mutable state variables.
+    """
 
     variables = {'params': params, 'batch_stats': batch_stats}
     images = batch['images']
 
+    # Apply model to images, using batch_stats as a mutable variable if training.
     if train:
         (deltas_pred, labels_pred), mutated_vars = \
             SpotsModel().apply(variables, images, train=train, mutable=['batch_stats'])
     else:
         deltas_pred, labels_pred = SpotsModel().apply(variables, images, train=train)
         mutated_vars = None
+
+    # Compute loss and metrics.
     metrics = compute_metrics(deltas_pred, labels_pred, batch, loss_weights)
     loss = metrics['loss']
+    aux = (metrics, mutated_vars)
 
-    return loss, (metrics, mutated_vars)
+    return loss, aux
 
 
 @jit
-def train_step(state, batch, loss_weights):
+def train_step(
+        state: TrainState,
+        batch: Dict[str, jnp.ndarray],
+        loss_weights: Dict[str, float]
+) -> Tuple[TrainState, Dict[str, jnp.ndarray]]:
 
+    """
+    Performs one training step.
+
+    Parameters
+    ----------
+    state : TrainState
+        Current training state.
+    batch : Dict[str, jnp.ndarray]
+        Dictionary containing input images and target arrays.
+    loss_weights : Dict[str, float]
+        Weights for different loss terms.
+
+    Returns
+    -------
+    state : TrainState
+        Updated training state.
+    metrics : Dict[str, jnp.ndarray]
+        Dictionary containing rmse, bce, sf1, and overall loss values.
+    """
+
+    # Define gradient function.
     grad_fn = value_and_grad(loss_fn, has_aux=True)
+
+    # Compute gradients and update parameters.
     (_, (metrics, mutated_vars)), grads = grad_fn(state.params, state.batch_stats, batch, loss_weights, train=True)
     state = state.apply_gradients(grads=grads, batch_stats=mutated_vars['batch_stats'])
 
     return state, metrics
 
 
-def train_epoch(state, ds, batch_size, loss_weights, epoch_learning_rate, input_size, coords_max_length):
+def train_epoch(
+        state: TrainState,
+        ds: Dict,
+        batch_size: int,
+        loss_weights: Dict[str, float],
+        epoch_learning_rate: float,
+        input_size: Tuple[int, int],
+        coords_max_length: int
+) -> Tuple[TrainState, List[Dict[str, float]], Dict[str, float]]:
+
+    """
+    Train model for one epoch.
+
+    Parameters
+    ----------
+    state : TrainState
+        Current train state.
+    ds : Dict
+        Dataset dictionary.
+    batch_size : int
+        Number of samples in each batch.
+    loss_weights : Dict[str, float]
+        Weights for different loss terms.
+    epoch_learning_rate : float
+        Learning rate for current epoch.
+    input_size : Tuple[int, int]
+        Size of input images.
+    coords_max_length : int
+        Maximum length of coordinates sequence.
+
+    Returns
+    -------
+    state : TrainState
+        Updated train state.
+    batch_metrics : List[Dict[str, float]]
+        List of metrics computed for each batch.
+    epoch_metrics : Dict[str, float]
+        Dictionary of metrics computed for epoch.
+    """
 
     print(f'Epoch {state.epoch + 1}:')
 
+    # Update learning rate.
     state.opt_state.hyperparams['learning_rate'] = jnp.array(epoch_learning_rate, dtype=float)
 
-    rng, *subrngs = random.split(state.rng, 3)
-    train_ds = transform_dataset(ds['train'], input_size, key=subrngs[0])
+    # Split random key and transform datasets.
+    key, *subkeys = random.split(state.key, 3)
+    train_ds = transform_dataset(ds['train'], input_size, key=subkeys[0])
     valid_ds = transform_dataset(ds['valid'], input_size)
 
     train_ds_size = len(train_ds['images'])
     valid_ds_size = len(valid_ds['images'])
     n_steps = train_ds_size // batch_size
+
+    # Initialize progress bar.
     pbar = tqdm(total=n_steps)
 
-    perms = random.permutation(subrngs[1], train_ds_size)
-    perms = perms[:n_steps * batch_size]  # skip incomplete batch
+    # Shuffle training dataset.
+    perms = random.permutation(subkeys[1], train_ds_size)
+    perms = perms[:n_steps * batch_size]
     perms = perms.reshape((n_steps, batch_size))
 
     batch_metrics = []
     epoch_metrics = {}
     for perm in perms:
 
+        # Extract and transform current training batch.
         train_batch = {k: v[perm, ...] for k, v in train_ds.items()}
         train_batch = transform_batch(train_batch, coords_max_length)
+
+        # Perform training step and update metrics.
         state, metrics = train_step(state, train_batch, loss_weights)
         metrics = {k: float(v) for k, v in metrics.items()}
         batch_metrics.append(metrics)
 
-        # compute mean of metrics across each batch in epoch.
+        # Compute mean training metrics across each batch in epoch.
         epoch_metrics = {
             k: np.mean([metrics[k] for metrics in batch_metrics]).astype(float)
             for k in batch_metrics[0]}
         epoch_metrics['n_steps'] = n_steps
 
+        # Update progress bar.
         summary = (
             f"(train) loss: {epoch_metrics['loss']:>6.4f}, rmse: {epoch_metrics['rmse']:>6.4f}, "
             f"bce: {epoch_metrics['bce']:>6.4f}, sf1: {epoch_metrics['sf1']:>6.4f}"
         )
-
         pbar.update(1)
         pbar.set_postfix_str(summary)
 
@@ -136,43 +318,100 @@ def train_epoch(state, ds, batch_size, loss_weights, epoch_learning_rate, input_
     val_epoch_metrics = []
     for i in range(valid_ds_size):
 
+        # Extract and transform current validation batch.
         val_batch = {k: v[i:i + 1, ...] for k, v in valid_ds.items()}
         val_batch = transform_batch(val_batch, coords_max_length)
+
+        # Compute and update validation metrics.
         _, (val_metrics, _) = loss_fn(state.params, state.batch_stats, val_batch, loss_weights, train=False)
         val_metrics = {f'val_{k}': v for k, v in val_metrics.items()}
         val_batch_metrics.append(val_metrics)
 
+        # Compute mean validation metrics.
         val_epoch_metrics = {
             k: np.mean([metrics[k] for metrics in val_batch_metrics]).astype(float)
             for k in val_batch_metrics[0]}
 
+        # Update progress bar.
         summary = (
             f"(valid) loss: {val_epoch_metrics['val_loss']:>6.4f}, rmse: {val_epoch_metrics['val_rmse']:>6.4f}, "
             f"bce: {val_epoch_metrics['val_bce']:>6.4f}, sf1: {val_epoch_metrics['val_sf1']:>6.4f} | "
             f"(train) loss: {epoch_metrics['loss']:>6.4f}, rmse: {epoch_metrics['rmse']:>6.4f}, "
             f"bce: {epoch_metrics['bce']:>6.4f}, sf1: {epoch_metrics['sf1']:>6.4f}"
         )
-
         pbar.set_postfix_str(summary)
 
     pbar.close()
 
+    # Compute mean training and validation metrics.
     epoch_metrics = epoch_metrics | val_epoch_metrics
     epoch_metrics['learning_rate'] = epoch_learning_rate
+
+    # Update training state.
     state = state.replace(epoch=state.epoch + 1)
-    state = state.replace(rng=rng)
+    state = state.replace(key=key)
 
     return state, batch_metrics, epoch_metrics
 
 
-def train_model(model_path, dataset_path, dataset_adjustment='normalize',
-                epochs=200, random_seed=0, batch_size=4, learning_rate=0.001,
-                warmup_epochs=10, decay_epochs=100, decay_rate=0.5, decay_transition_epochs=10,
-                optimizer=None, loss_weights=None):
+def train_model(
+        model_path: str,
+        dataset_path: str,
+        dataset_adjustment: Optional[str] = 'normalize',
+        epochs: int = 200,
+        random_seed: int = 0,
+        batch_size: int = 4,
+        learning_rate: float = 0.001,
+        warmup_epochs: int = 10,
+        decay_epochs: int = 100,
+        decay_rate: float = 0.5,
+        decay_transition_epochs: int = 10,
+        optimizer: Optional[optax.GradientTransformation] = None,
+        loss_weights: Optional[Dict[str, float]] = None
+) -> None:
+
+    """
+    Train SpotsModel.
+
+    Parameters
+    ----------
+    model_path : str
+        Path to new or existing model.
+    dataset_path : str
+        Path to directory containing training and validation datasets.
+    dataset_adjustment : Optional[str], optional
+        Adjustment type applied to dataset. Default is 'normalize'.
+    epochs : int, optional
+        Number of epochs to train model for. Default is 200.
+    random_seed : int, optional
+        Random seed used for initialization and training. Default is 0.
+    batch_size : int, optional
+        Number of samples in each batch. Default is 4.
+    learning_rate : float, optional
+        Learning rate for optimizer. Default is 0.001.
+    warmup_epochs : int, optional
+        Number of warmup epochs for learning rate scheduling. Default is 10.
+    decay_epochs : int, optional
+        Number of decay epochs for learning rate scheduling. Default is 100.
+    decay_rate : float, optional
+        Decay rate for learning rate scheduling. Default is 0.5.
+    decay_transition_epochs : int, optional
+        Number of epochs for each decay transition in learning rate scheduling. Default is 10.
+    optimizer : Optional[optax.GradientTransformation], optional
+        Optax optimizer used for training. Default is Adabelief with eps=1e-8 and weight decay=1e-5.
+    loss_weights : Optional[Dict[str, float]], optional
+        Weights for different loss terms. Default is {'rmse': 0.4, 'bce': 0.2 'sf1': 1.0}.
+
+    Raises
+    ------
+    ValueError
+        If warmup_epochs + decay_epochs is greater than epochs.
+    """
 
     if warmup_epochs + decay_epochs > epochs:
         raise ValueError('warmup_epochs + decay_epochs cannot be greater than epochs.')
 
+    # Create directories for storing checkpoints, batch metrics, and epoch metrics.
     model_path = Path(model_path)
     model_parent_path = model_path.parent
     model_name = model_path.stem
@@ -181,6 +420,7 @@ def train_model(model_path, dataset_path, dataset_adjustment='normalize',
     batch_metrics_log_path = model_parent_path.joinpath(f'{model_name}_batch_metrics_log')
     epoch_metrics_log_path = model_parent_path.joinpath(f'{model_name}_epoch_metrics_log')
 
+    # Load batch metrics and epoch metrics logs.
     if batch_metrics_log_path.is_file():
         with open(batch_metrics_log_path, 'r') as f_batch_metrics_log:
             batch_metrics_log = json.load(f_batch_metrics_log)
@@ -192,6 +432,7 @@ def train_model(model_path, dataset_path, dataset_adjustment='normalize',
     else:
         epoch_metrics_log = []
 
+    # Load datasets.
     print('Loading datasets...')
     ds = load_datasets(dataset_path, adjustment=dataset_adjustment)
     train_images_shape = ds['train']['images'].shape
@@ -199,17 +440,21 @@ def train_model(model_path, dataset_path, dataset_adjustment='normalize',
     coords_max_length = \
         max([len(coords) for coords in ds['train']['coords']] + [len(coords) for coords in ds['valid']['coords']])
 
-    rng = random.PRNGKey(random_seed)
+    # Create random key.
+    key = random.PRNGKey(random_seed)
 
+    # Create learning rate schedule.
     warmup = [learning_rate * i / warmup_epochs for i in range(warmup_epochs)]
     constant = [learning_rate] * (epochs - warmup_epochs - decay_epochs)
     decay = [learning_rate * decay_rate ** np.ceil(i / decay_transition_epochs) for i in range(1, decay_epochs + 1)]
     schedule = warmup + constant + decay
 
+    # Default optimizer.
     if optimizer is None:
         optimizer = partial(adabelief, eps=1e-8, weight_decay=1e-5)
     tx = optax.inject_hyperparams(optimizer)(learning_rate=learning_rate)
 
+    # Default loss weights.
     if loss_weights is None:
         loss_weights = {
             'rmse': 0.4,
@@ -217,6 +462,7 @@ def train_model(model_path, dataset_path, dataset_adjustment='normalize',
             'sf1': 1.0
         }
 
+    # Create checkpoint manager.
     mgr_options = orbax.checkpoint.CheckpointManagerOptions(max_to_keep=2)
     checkpointers = {'state': orbax.checkpoint.PyTreeCheckpointer()}
     ckpt_mgr = orbax.checkpoint.CheckpointManager(
@@ -225,6 +471,7 @@ def train_model(model_path, dataset_path, dataset_adjustment='normalize',
         options=mgr_options
     )
 
+    # Load existing model weights.
     if (next(checkpoint_path.iterdir(), None) is None) and model_path.is_file():
         print(f'Loading existing model weights from {model_path}...')
         with open(model_path, 'rb') as f_model:
@@ -232,8 +479,11 @@ def train_model(model_path, dataset_path, dataset_adjustment='normalize',
     else:
         variables = None
 
+    # Create new training state.
     print('Creating new TrainState...')
-    state = create_train_state(rng, input_size, tx, variables)
+    state = create_train_state(key, input_size, tx, variables)
+
+    # Load latest checkpoint.
     latest_epoch = ckpt_mgr.latest_step()
     if latest_epoch is not None:
         print(f'Loading latest checkpoint from {checkpoint_path}...')
@@ -246,12 +496,15 @@ def train_model(model_path, dataset_path, dataset_adjustment='normalize',
 
     for epoch_learning_rate in schedule:
 
+        # Train model for one epoch.
         state, batch_metrics, epoch_metrics = \
             train_epoch(state, ds, batch_size, loss_weights, epoch_learning_rate, input_size, coords_max_length)
 
+        # Update batch metrics and epoch metrics logs.
         batch_metrics_log += batch_metrics
         epoch_metrics_log += [epoch_metrics]
 
+        # Save checkpoint.
         save_args = orbax_utils.save_args_from_target(state)
         ckpt_mgr.save(
             step=state.epoch,
@@ -259,13 +512,14 @@ def train_model(model_path, dataset_path, dataset_adjustment='normalize',
             save_kwargs={'state': {'save_args': save_args}}
         )
 
+        # Save batch metrics and epoch metrics logs.
         with open(batch_metrics_log_path, 'w') as f_batch_metrics_log:
             json.dump(batch_metrics_log, f_batch_metrics_log, indent=4)
         with open(epoch_metrics_log_path, 'w') as f_epoch_metrics_log:
             json.dump(epoch_metrics_log, f_epoch_metrics_log, indent=4)
 
+    # Save model weights.
     variables = {'params': state.params, 'batch_stats': state.batch_stats, 'input_size': input_size}
     bytes_model = serialization.to_bytes(variables)
-
     with open(model_path, 'wb') as f_model:
         f_model.write(bytes_model)
