@@ -245,7 +245,7 @@ def train_epoch(
     ds : Dict
         Dataset dictionary.
     batch_size : int
-        Number of samples in each batch.
+        Batch size for training.
     loss_weights : Dict[str, float]
         Weights for different loss terms.
     epoch_learning_rate : float
@@ -386,7 +386,7 @@ def train_model(
     random_seed : int, optional
         Random seed used for initialization and training. Default is 0.
     batch_size : int, optional
-        Number of samples in each batch. Default is 4.
+        Batch size for training. Default is 4.
     learning_rate : float, optional
         Learning rate for optimizer. Default is 0.001.
     warmup_epochs : int, optional
