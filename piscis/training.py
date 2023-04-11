@@ -90,6 +90,7 @@ def create_train_state(
 
     return state
 
+
 def compute_metrics(
         deltas_pred: jnp.ndarray,
         labels_pred: jnp.ndarray,
@@ -286,7 +287,7 @@ def train_epoch(
     for perm in perms:
 
         # Extract and transform current training batch.
-        train_batch = {k: v[perm, ...] for k, v in train_ds.items()}
+        train_batch = {k: v[perm] for k, v in train_ds.items()}
         train_batch = transform_batch(train_batch, coords_max_length)
 
         # Perform training step and update metrics.
@@ -313,12 +314,12 @@ def train_epoch(
     for i in range(valid_ds_size):
 
         # Extract and transform current validation batch.
-        val_batch = {k: v[i:i + 1, ...] for k, v in valid_ds.items()}
+        val_batch = {k: v[i:i + 1] for k, v in valid_ds.items()}
         val_batch = transform_batch(val_batch, coords_max_length)
 
         # Compute and update validation metrics.
         _, (val_metrics, _) = loss_fn(state.params, state.batch_stats, val_batch, loss_weights, train=False)
-        val_metrics = {f'val_{k}': v for k, v in val_metrics.items()}
+        val_metrics = {f'val_{k}': float(v) for k, v in val_metrics.items()}
         val_batch_metrics.append(val_metrics)
 
         # Compute mean validation metrics.
