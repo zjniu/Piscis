@@ -22,8 +22,7 @@ from piscis.optimizers import adabelief
 
 class TrainState(train_state.TrainState, ABC):
 
-    """
-    TrainState class used to store the current state of model during training.
+    """TrainState class used to store the current state of model during training.
     Inherits from train_state.TrainState class provided by Flax and adds additional attributes.
 
     Attributes
@@ -48,8 +47,7 @@ def create_train_state(
         variables: Optional[Dict] = None
 ) -> TrainState:
 
-    """
-    Create new TrainState object.
+    """Create new TrainState object.
 
     Parameters
     ----------
@@ -99,8 +97,7 @@ def compute_metrics(
         loss_weights: Dict[str, float]
 ) -> Dict[str, jnp.ndarray]:
 
-    """
-    Compute training metrics.
+    """Compute training metrics.
 
     Parameters
     ----------
@@ -145,8 +142,7 @@ def loss_fn(
         train: bool
 ) -> Tuple[jnp.ndarray, Tuple[Dict[str, jnp.ndarray], Dict]]:
 
-    """
-    Computes loss and metrics for a given batch.
+    """Computes loss and metrics for a given batch.
 
     Parameters
     ----------
@@ -195,8 +191,7 @@ def train_step(
         loss_weights: Dict[str, float]
 ) -> Tuple[TrainState, Dict[str, jnp.ndarray]]:
 
-    """
-    Performs one training step.
+    """Performs one training step.
 
     Parameters
     ----------
@@ -235,8 +230,7 @@ def train_epoch(
         coords_max_length: int
 ) -> Tuple[TrainState, List[Dict[str, float]], Dict[str, float]]:
 
-    """
-    Train model for one epoch.
+    """Train model for one epoch.
 
     Parameters
     ----------
@@ -370,8 +364,7 @@ def train_model(
         loss_weights: Optional[Dict[str, float]] = None
 ) -> None:
 
-    """
-    Train SpotsModel.
+    """Train SpotsModel.
 
     Parameters
     ----------
