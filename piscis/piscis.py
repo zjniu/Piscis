@@ -32,9 +32,9 @@ class Piscis:
     variables : Dict
         Model variables.
     batch_size : int
-        Batch size.
-    input_size : Tuple[int, int]
-        Size of input images.
+        Batch size for the CNN.
+    input_size : Sequence[int]
+        Input size for the CNN.
     _jitted : Callable
         Compiled model apply function.
     """
@@ -53,9 +53,9 @@ class Piscis:
         model : str, optional
             Model name. Default is 'spots'.
         batch_size : int, optional
-            Batch size. Default is 4.
-        input_size : Optional[Sequence[int, int]], optional
-            Size of input images. If None, it is obtained from the model's variables. Default is None.
+            Batch size for the CNN. Default is 4.
+        input_size : Optional[Sequence[int]], optional
+            Input size for the CNN. If None, it is obtained from the model's variables. Default is None.
         """
 
         # Set the batch size to 1 if running on CPU.
