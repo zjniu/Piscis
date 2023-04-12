@@ -19,9 +19,9 @@ def compute_spot_coordinates(
     Parameters
     ----------
     deltas : np.ndarray
-        Deltas.
+        Subpixel displacements.
     labels : np.ndarray
-        Labels.
+        Binary labels.
     threshold : float
         Detection threshold between 0 and 1.
     min_distance : int
@@ -71,9 +71,9 @@ def scanned_apply_deltas(
     Parameters
     ----------
     deltas : jnp.ndarray
-        Deltas.
+        Subpixel displacements.
     labels : jnp.ndarray
-        Labels.
+        Binary labels.
     n_iter : int
         Number of iterations.
     kernel_size : Sequence[int], optional
@@ -134,9 +134,9 @@ def apply_deltas(
     Parameters
     ----------
     deltas : jnp.ndarray
-        Deltas.
+        Subpixel displacements.
     labels : jnp.ndarray
-        Labels.
+        Binary labels.
     kernel_size : Sequence[int], optional
         Kernel size or size of the window to search for labels convergence. Default is (3, 3).
 
@@ -187,7 +187,7 @@ def _count_convergence(
     convergence : jnp.ndarray
         Convergence array.
     labels : jnp.ndarray
-        Labels.
+        Binary labels.
     kernel_size : Sequence[int]
         Kernel size or size of the window to search for labels convergence.
     i : jnp.ndarray

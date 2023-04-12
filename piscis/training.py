@@ -103,9 +103,9 @@ def compute_metrics(
     Parameters
     ----------
     deltas_pred : jnp.ndarray
-        Predicted deltas.
+        Predicted subpixel displacements.
     labels_pred : jnp.ndarray
-        Predicted labels.
+        Predicted binary labels.
     batch : Dict[str, jnp.ndarray]
         Dictionary containing the input image and target arrays.
     loss_weights : Dict[str, float]

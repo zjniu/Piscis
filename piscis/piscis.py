@@ -324,9 +324,9 @@ class Piscis:
         Returns
         -------
         deltas : np.ndarray
-            Predicted deltas.
+            Predicted subpixel displacements.
         labels : np.ndarray
-            Predicted labels.
+            Predicted binary labels.
         """
 
         # Compute Dask arrays if necessary.
@@ -357,9 +357,9 @@ class Piscis:
         Parameters
         ----------
         deltas : np.ndarray
-            Predicted deltas.
+            Predicted subpixel displacements.
         labels : np.ndarray
-            Predicted labels.
+            Predicted binary labels.
         scales : np.ndarray
             Scales for rescaling tiles.
         threshold : float
