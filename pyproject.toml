@@ -7,7 +7,7 @@ name = "Piscis"
 version = "0.0.1"
 description = "Deep learning algorithm for automatic spot detection in fluorescent microscopy images."
 readme = "README.md"
-requires-python = ">=3.7, <3.11"
+requires-python = ">=3.7, <4"
 authors = [
     {email = "wniu721@gmail.com"},
     {name = "William Niu"}
@@ -28,6 +28,9 @@ dependencies = [
     "scipy",
     "tqdm"
 ]
+
+[project.scripts]
+piscis = "piscis.__main__:main"
 
 [tool.setuptools]
 packages = ["piscis", "piscis.models", "piscis.networks"]
