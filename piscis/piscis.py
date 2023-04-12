@@ -225,12 +225,12 @@ class Piscis:
         carry, process_variables = process_stack.init(tiles)
         coords = None
         postprocess_variables = None
-        n_steps = process_variables['n_steps'] + 1
+        i_max = tiles.shape[0]
         mod = 0
+        i = 0
         j = 0
-        k = 0
 
-        for i in range(n_steps):
+        for _ in range(process_variables['n_steps']):
 
             # Apply the lifted process function.
             carry, process_variables = process_stack.apply(carry, process_variables)
@@ -241,17 +241,17 @@ class Piscis:
 
             # Apply the lifted postprocess function.
             mod = mod + self.batch_size
-            if mod >= stack_axis_len:
+            while (mod >= stack_axis_len) and (i < i_max):
                 coords, postprocess_variables = postprocess_stack.apply(coords, postprocess_variables)
                 if not intermediates:
-                    carry[0][j, k] = None
-                    carry[1][j, k] = None
+                    carry[0][i, j] = None
+                    carry[1][i, j] = None
                 mod = mod - stack_axis_len
-                if k == coords.shape[1] - 1:
-                    k = 0
-                    j = j + 1
+                if j == coords.shape[1] - 1:
+                    i = i + 1
+                    j = 0
                 else:
-                    k = k + 1
+                    j = j + 1
 
         if intermediates:
             y = np.concatenate((carry[0], carry[1]), axis=-1)
