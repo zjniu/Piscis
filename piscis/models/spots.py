@@ -53,7 +53,7 @@ EfficientNetV2XS = build_efficientnetv2(
     width_coefficient=1.0,
     depth_coefficient=1.0,
     stem_strides=1,
-    dropout_rate=0
+    dropout_rate=0.2
 )
 
 

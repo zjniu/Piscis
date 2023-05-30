@@ -73,7 +73,7 @@ def create_train_state(
 
     # Initialize parameters.
     if variables is None:
-        variables = model.init({'params': subkey}, np.ones((1, *input_size, 1)))
+        variables = model.init(subkey, np.ones((1, *input_size, 1)), train=False)
     else:
         variables = frozen_dict.freeze(variables)
 
@@ -133,11 +133,12 @@ def compute_metrics(
     return metrics
 
 
-@partial(jit, static_argnums=4)
+@partial(jit, static_argnums=5)
 def loss_fn(
         params: Any,
         batch_stats: Any,
         batch: Dict[str, jnp.ndarray],
+        key: Optional[jnp.ndarray],
         loss_weights: Dict[str, float],
         train: bool
 ) -> Tuple[jnp.ndarray, Tuple[Dict[str, jnp.ndarray], Dict]]:
@@ -152,6 +153,8 @@ def loss_fn(
         Batch statistics used for normalization.
     batch : Dict[str, jnp.ndarray]
         Dictionary containing the input images and target arrays.
+    key : Optional[jnp.ndarray]
+        Random Key used for dropout.
     loss_weights : Dict[str, float]
         Weights for terms in the overall loss function.
     train : bool
@@ -171,7 +174,7 @@ def loss_fn(
     # Apply the model to the images, using batch_stats as a mutable variable if training.
     if train:
         (deltas_pred, labels_pred), mutated_vars = \
-            SpotsModel().apply(variables, images, train=train, mutable=['batch_stats'])
+            SpotsModel().apply(variables, images, train=train, rngs={'dropout': key}, mutable=['batch_stats'])
     else:
         deltas_pred, labels_pred = SpotsModel().apply(variables, images, train=train)
         mutated_vars = None
@@ -188,6 +191,7 @@ def loss_fn(
 def train_step(
         state: TrainState,
         batch: Dict[str, jnp.ndarray],
+        key: Optional[jnp.ndarray],
         loss_weights: Dict[str, float]
 ) -> Tuple[TrainState, Dict[str, jnp.ndarray]]:
 
@@ -199,6 +203,8 @@ def train_step(
         Current training state.
     batch : Dict[str, jnp.ndarray]
         Dictionary containing the input images and target arrays.
+    key : Optional[jnp.ndarray]
+        Random Key used for dropout.
     loss_weights : Dict[str, float]
         Weights for terms in the overall loss function.
 
@@ -214,7 +220,7 @@ def train_step(
     grad_fn = value_and_grad(loss_fn, has_aux=True)
 
     # Compute gradients and update parameters.
-    (_, (metrics, mutated_vars)), grads = grad_fn(state.params, state.batch_stats, batch, loss_weights, train=True)
+    (_, (metrics, mutated_vars)), grads = grad_fn(state.params, state.batch_stats, batch, key, loss_weights, train=True)
     state = state.apply_gradients(grads=grads, batch_stats=mutated_vars['batch_stats'])
 
     return state, metrics
@@ -265,7 +271,8 @@ def train_epoch(
     state.opt_state.hyperparams['learning_rate'] = jnp.array(epoch_learning_rate, dtype=float)
 
     # Split the random key and transform datasets.
-    key, *subkeys = random.split(state.key, 3)
+    key = random.fold_in(state.key, state.epoch)
+    subkeys = random.split(key, 3)
     train_ds = transform_dataset(ds['train'], input_size, key=subkeys[0])
     valid_ds = transform_dataset(ds['valid'], input_size)
 
@@ -290,7 +297,7 @@ def train_epoch(
         train_batch = transform_batch(train_batch, coords_max_length)
 
         # Perform a training step and update metrics.
-        state, metrics = train_step(state, train_batch, loss_weights)
+        state, metrics = train_step(state, train_batch, subkeys[2], loss_weights)
         metrics = {k: float(v) for k, v in metrics.items()}
         batch_metrics.append(metrics)
 
@@ -317,7 +324,7 @@ def train_epoch(
         val_batch = transform_batch(val_batch, coords_max_length)
 
         # Compute and update validation metrics.
-        _, (val_metrics, _) = loss_fn(state.params, state.batch_stats, val_batch, loss_weights, train=False)
+        _, (val_metrics, _) = loss_fn(state.params, state.batch_stats, val_batch, None, loss_weights, train=False)
         val_metrics = {f'val_{k}': float(v) for k, v in val_metrics.items()}
         val_batch_metrics.append(val_metrics)
 
@@ -343,7 +350,6 @@ def train_epoch(
 
     # Update the training state.
     state = state.replace(epoch=state.epoch + 1)
-    state = state.replace(key=key)
 
     return state, batch_metrics, epoch_metrics
 
