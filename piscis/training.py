@@ -1,5 +1,4 @@
 import jax.numpy as jnp
-import json
 import numpy as np
 import optax
 import orbax.checkpoint
@@ -411,20 +410,6 @@ def train_model(
     model_name = model_path.stem
     checkpoint_path = model_parent_path.joinpath(f'{model_name}_ckpts')
     checkpoint_path.mkdir(parents=True, exist_ok=True)
-    batch_metrics_log_path = model_parent_path.joinpath(f'{model_name}_batch_metrics_log')
-    epoch_metrics_log_path = model_parent_path.joinpath(f'{model_name}_epoch_metrics_log')
-
-    # Load batch metrics and epoch metrics logs.
-    if batch_metrics_log_path.is_file():
-        with open(batch_metrics_log_path, 'r') as f_batch_metrics_log:
-            batch_metrics_log = json.load(f_batch_metrics_log)
-    else:
-        batch_metrics_log = []
-    if epoch_metrics_log_path.is_file():
-        with open(epoch_metrics_log_path, 'r') as f_epoch_metrics_log:
-            epoch_metrics_log = json.load(f_epoch_metrics_log)
-    else:
-        epoch_metrics_log = []
 
     # Load datasets.
     print('Loading datasets...')
@@ -458,7 +443,11 @@ def train_model(
 
     # Create a checkpoint manager.
     mgr_options = orbax.checkpoint.CheckpointManagerOptions(max_to_keep=2)
-    checkpointers = {'state': orbax.checkpoint.PyTreeCheckpointer()}
+    checkpointers = {
+        'state': orbax.checkpoint.PyTreeCheckpointer(),
+        'batch_metrics_log': orbax.checkpoint.Checkpointer(orbax.checkpoint.JsonCheckpointHandler()),
+        'epoch_metrics_log': orbax.checkpoint.Checkpointer(orbax.checkpoint.JsonCheckpointHandler())
+    }
     ckpt_mgr = orbax.checkpoint.CheckpointManager(
         directory=checkpoint_path,
         checkpointers=checkpointers,
@@ -477,16 +466,23 @@ def train_model(
     print('Creating new TrainState...')
     state = create_train_state(key, input_size, tx, variables)
 
+    # Create lists for storing batch and epoch metrics.
+    batch_metrics_log = []
+    epoch_metrics_log = []
+
     # Load the latest checkpoint.
     latest_epoch = ckpt_mgr.latest_step()
     if latest_epoch is not None:
         print(f'Loading latest checkpoint from {checkpoint_path}...')
         restore_args = orbax_utils.restore_args_from_target(state, mesh=None)
-        state = ckpt_mgr.restore(
+        checkpoint = ckpt_mgr.restore(
             step=latest_epoch,
-            items={'state': state},
+            items={'state': state, 'batch_metrics_log': batch_metrics_log, 'epoch_metrics_log': epoch_metrics_log},
             restore_kwargs={'state': {'restore_args': restore_args}}
-        )['state']
+        )
+        state = checkpoint['state']
+        batch_metrics_log = checkpoint['batch_metrics_log']
+        epoch_metrics_log = checkpoint['epoch_metrics_log']
 
     for epoch_learning_rate in schedule:
 
@@ -502,15 +498,9 @@ def train_model(
         save_args = orbax_utils.save_args_from_target(state)
         ckpt_mgr.save(
             step=state.epoch,
-            items={'state': state},
+            items={'state': state, 'batch_metrics_log': batch_metrics_log, 'epoch_metrics_log': epoch_metrics_log},
             save_kwargs={'state': {'save_args': save_args}}
         )
-
-        # Save batch metrics and epoch metrics logs.
-        with open(batch_metrics_log_path, 'w') as f_batch_metrics_log:
-            json.dump(batch_metrics_log, f_batch_metrics_log, indent=4)
-        with open(epoch_metrics_log_path, 'w') as f_epoch_metrics_log:
-            json.dump(epoch_metrics_log, f_epoch_metrics_log, indent=4)
 
     # Save the model weights.
     variables = {'params': state.params, 'batch_stats': state.batch_stats, 'input_size': input_size}
