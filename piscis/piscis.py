@@ -7,6 +7,7 @@ from deeptile import lift, Output
 from deeptile.core.data import Tiled
 from deeptile.extensions import stitch
 from flax import serialization
+from functools import partial
 from jax import jit
 from jax.lib import xla_bridge
 from pathlib import Path
@@ -81,8 +82,10 @@ class Piscis:
 
             x = jnp.expand_dims(x, axis=-1)
             deltas, labels = self.model.apply(self.variables, x, False)
+            labels = labels[:, :, :, 0]
+            counts = utils.vmap_apply_deltas(deltas, labels, (3, 3))
 
-            return deltas, labels
+            return deltas, counts, labels
 
         # Compile the model apply function.
         jitted(jnp.zeros((self.batch_size, *self.input_size)))
@@ -217,8 +220,8 @@ class Piscis:
         """
 
         # Lift process and postprocess functions.
-        process_stack = lift(self._process, vectorized=True, batch_axis=True, pad_final_batch=True,
-                             batch_size=self.batch_size)
+        process_stack = lift(partial(self._process, intermediates=intermediates),
+                             vectorized=True, batch_axis=True, pad_final_batch=True, batch_size=self.batch_size)
         postprocess_stack = lift(self._postprocess_stack, vectorized=False, batch_axis=False)
 
         # Initialize the lifted process function.
@@ -237,7 +240,8 @@ class Piscis:
 
             # Initialize the lifted postprocess function if necessary.
             if postprocess_variables is None:
-                coords, postprocess_variables = postprocess_stack.init(*carry, scales, threshold, min_distance)
+                coords, postprocess_variables = \
+                    postprocess_stack.init(carry[0], carry[1], scales, threshold, min_distance)
 
             # Apply the lifted postprocess function.
             mod = mod + self.batch_size
@@ -254,7 +258,8 @@ class Piscis:
                     j = j + 1
 
         if intermediates:
-            y = np.concatenate((carry[0], carry[1]), axis=-1)
+            y = np.concatenate((carry[0],
+                                np.expand_dims(carry[2], axis=-1), np.expand_dims(carry[1], axis=-1)), axis=-1)
             y = np.moveaxis(y, -1, 1)
             return coords, y
         else:
@@ -293,17 +298,21 @@ class Piscis:
         """
 
         # Process tiles.
-        deltas, labels = self._process(tiles)
+        if intermediates:
+            deltas, counts, labels = self._process(tiles, intermediates=intermediates)
+        else:
+            deltas, counts = self._process(tiles, intermediates=intermediates)
+            labels = None
 
         # Postprocess tiles.
         coords = np.empty(len(deltas), dtype=object)
-        for i, (d, l) in enumerate(zip(deltas, labels)):
-            coords[i] = utils.compute_spot_coordinates(d, l[:, :, 0], threshold=threshold, min_distance=min_distance)
+        for i, (d, c) in enumerate(zip(deltas, counts)):
+            coords[i] = utils.compute_spot_coordinates(d, c, threshold=threshold, min_distance=min_distance)
             coords[i][:, -2:] = coords[i][:, -2:] / scales
         coords = Output(coords, isimage=False, stackable=False, tile_scales=(1.0, 1.0))
 
         if intermediates:
-            y = np.concatenate((deltas, labels), axis=-1)
+            y = np.concatenate((deltas, np.expand_dims(labels, axis=-1), np.expand_dims(counts, axis=-1)), axis=-1)
             y = np.moveaxis(y, -1, 1)
             return coords, y
         else:
@@ -311,8 +320,9 @@ class Piscis:
 
     def _process(
             self,
-            tiles: Tiled
-    ) -> Tuple[np.ndarray, np.ndarray]:
+            tiles: Tiled,
+            intermediates: bool
+    ) -> Union[Tuple[np.ndarray, np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray]]:
 
         """Process tiles.
 
@@ -320,13 +330,17 @@ class Piscis:
         ----------
         tiles : Tiled
             Tiles of images.
+        intermediates : bool
+            Whether to keep intermediate feature maps.
 
         Returns
         -------
         deltas : np.ndarray
             Predicted subpixel displacements.
+        counts : np.ndarray
+            Predicted mass landscape.
         labels : np.ndarray
-            Predicted binary labels.
+            Predicted binary labels. Only returned if `intermediates` is True.
         """
 
         # Compute Dask arrays if necessary.
@@ -337,16 +351,22 @@ class Piscis:
             tiles = resize(tiles, (tiles.shape[0], *self.input_size))
 
         # Run the jitted model apply function on tiles.
-        deltas, labels = self._jitted(tiles)
-        deltas = np.asarray(deltas)
-        labels = np.asarray(labels)
-
-        return deltas, labels
+        if intermediates:
+            deltas, counts, labels = self._jitted(tiles)
+            deltas = np.asarray(deltas)
+            counts = np.asarray(counts)
+            labels = np.asarray(labels)
+            return deltas, counts, labels
+        else:
+            deltas, counts, _ = self._jitted(tiles)
+            deltas = np.asarray(deltas)
+            counts = np.asarray(counts)
+            return deltas, counts
 
     @staticmethod
     def _postprocess_stack(
             deltas: np.ndarray,
-            labels: np.ndarray,
+            counts: np.ndarray,
             scales: np.ndarray,
             threshold: float,
             min_distance: int
@@ -358,8 +378,8 @@ class Piscis:
         ----------
         deltas : np.ndarray
             Predicted subpixel displacements.
-        labels : np.ndarray
-            Predicted binary labels.
+        counts : np.ndarray
+            Predicted mass landscape.
         scales : np.ndarray
             Scales for rescaling tiles.
         threshold : float
@@ -374,8 +394,7 @@ class Piscis:
         """
 
         # Compute coordinates of detected spots.
-        coords = utils.compute_spot_coordinates(deltas, labels[:, :, :, 0],
-                                                threshold=threshold, min_distance=min_distance)
+        coords = utils.compute_spot_coordinates(deltas, counts, threshold=threshold, min_distance=min_distance)
 
         # Rescale coordinates.
         coords[:, -2:] = coords[:, -2:] / scales

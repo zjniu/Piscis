@@ -9,7 +9,7 @@ from typing import Dict, List, Sequence, Tuple
 
 def compute_spot_coordinates(
         deltas: np.ndarray,
-        labels: np.ndarray,
+        counts: np.ndarray,
         threshold: float,
         min_distance: int,
 ) -> np.ndarray:
@@ -20,8 +20,8 @@ def compute_spot_coordinates(
     ----------
     deltas : np.ndarray
         Subpixel displacements.
-    labels : np.ndarray
-        Binary labels.
+    counts : np.ndarray
+        Mass landscape.
     threshold : float
         Detection threshold between 0 and 1.
     min_distance : int
@@ -34,18 +34,18 @@ def compute_spot_coordinates(
     """
 
     # Check if the labels are in a stack.
-    stack = labels.ndim == 3
+    stack = counts.ndim == 3
 
     if stack:
 
         # Use connected components to detect spots if labels are in a stack.
-        labels = measure.label(labels > threshold)
+        labels = measure.label(counts > threshold)
         peaks = np.array([region['centroid'] for region in measure.regionprops(labels)], dtype=int)
 
     else:
 
         # Use peak local maxima to detect spots if labels are not in a stack.
-        peaks = feature.peak_local_max(labels, min_distance=min_distance, threshold_abs=threshold, exclude_border=False)
+        peaks = feature.peak_local_max(counts, min_distance=min_distance, threshold_abs=threshold, exclude_border=False)
 
     # Apply deltas to detected spots.
     if len(peaks) > 0:
@@ -54,7 +54,7 @@ def compute_spot_coordinates(
         else:
             coords = peaks + deltas[peaks[:, 0], peaks[:, 1]]
     else:
-        coords = np.empty((0, labels.ndim), dtype=np.float32)
+        coords = np.empty((0, counts.ndim), dtype=np.float32)
 
     return coords
 
