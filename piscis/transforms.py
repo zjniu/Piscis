@@ -11,50 +11,52 @@ class RandomAugment:
     def __init__(self):
 
         self.output_shape = None
-        self.flip0 = []
-        self.flip1 = []
-        self.scale = []
-        self.dxy = []
-        self.theta = []
-        self.affines = []
         self.intensity_scales = []
+        self.scales = []
+        self.dxys = []
+        self.thetas = []
+        self.affines = []
+        self.flips0 = []
+        self.flips1 = []
 
-    def generate_transforms(self, images, key, base_scales, output_shape):
+    def generate_transforms(self, images, key, base_scales, output_shape, max_intensity_scale_factor=5,
+                            min_scale_factor=0.75, max_scale_factor=1.25):
 
         # Reset
         self.output_shape = output_shape
-        self.flip0 = []
-        self.flip1 = []
-        self.scale = []
-        self.dxy = []
-        self.theta = []
+        self.flips0 = []
+        self.flips1 = []
+        self.scales = []
+        self.dxys = []
+        self.thetas = []
         self.affines = []
+        self.intensity_scales = []
 
         for image, base_scale in zip(images, base_scales):
 
             # Random flip
             key, *subkeys = random.split(key, 3)
             flip0 = random.uniform(subkeys[0]) > 0.5
-            self.flip0.append(flip0)
+            self.flips0.append(float(flip0))
             flip1 = random.uniform(subkeys[1]) > 0.5
-            self.flip1.append(flip1)
+            self.flips1.append(float(flip1))
 
             # Random scaling
             key, subkey = random.split(key)
-            scale = base_scale * (1 + (random.uniform(subkey) - 0.5) / 2)
-            self.scale.append(scale)
+            scale = base_scale * (min_scale_factor + (max_scale_factor - min_scale_factor) * random.uniform(subkey))
+            self.scales.append(float(scale))
 
             # Random translation
             key, subkey = random.split(key)
             dxy = np.maximum(0, np.array([image.shape[1] * scale - output_shape[1],
                                           image.shape[0] * scale - output_shape[0]]))
             dxy = (random.uniform(subkey, (2,)) - 0.5) * dxy
-            self.dxy.append(dxy)
+            self.dxys.append(np.asarray(dxy))
 
             # Random rotation
             key, subkey = random.split(key)
             theta = random.uniform(subkey) * 2 * np.pi
-            self.theta.append(theta)
+            self.thetas.append(float(theta))
 
             # Construct affine transformation
             image_center = (image.shape[1] / 2, image.shape[0] / 2)
@@ -64,14 +66,14 @@ class RandomAugment:
 
             # Random intensity scaling
             key, subkey = random.split(key)
-            intensity_scale = jnp.exp((random.uniform(subkey) - 0.5) * 2 * jnp.log(5))
-            self.intensity_scales.append(intensity_scale)
+            intensity_scale = jnp.exp((random.uniform(subkey) - 0.5) * 2 * jnp.log(max_intensity_scale_factor))
+            self.intensity_scales.append(float(intensity_scale))
 
     def apply_coord_transforms(self, coords, filter_coords=True):
 
         transformed_coords = []
 
-        for coord, flip0, flip1, affine in zip(coords, self.flip0, self.flip1, self.affines):
+        for coord, flip0, flip1, affine in zip(coords, self.flips0, self.flips1, self.affines):
 
             # Apply affine transformation
             coord = np.concatenate((np.flip(coord, axis=1), np.ones((len(coord), 1))), axis=1)
@@ -98,26 +100,26 @@ class RandomAugment:
         transformed_images = []
 
         for image, affine, flip0, flip1, intensity_scale in \
-                zip(images, self.affines, self.flip0, self.flip1, self.intensity_scales):
+                zip(images, self.affines, self.flips0, self.flips1, self.intensity_scales):
 
             # Apply affine transformation
             if interpolation == 'nearest':
-                transformed_image = cv.warpAffine(image, M=affine, dsize=self.output_shape, flags=cv.INTER_NEAREST)
+                image = cv.warpAffine(image, M=affine, dsize=self.output_shape, flags=cv.INTER_NEAREST)
             elif interpolation == 'bilinear':
-                transformed_image = cv.warpAffine(image, M=affine, dsize=self.output_shape, flags=cv.INTER_LINEAR)
+                image = cv.warpAffine(image, M=affine, dsize=self.output_shape, flags=cv.INTER_LINEAR)
             else:
                 raise ValueError('Interpolation mode not supported.')
 
             # Random flip
             if flip0:
-                transformed_image = np.flip(transformed_image, axis=0)
+                image = np.flip(image, axis=0)
             if flip1:
-                transformed_image = np.flip(transformed_image, axis=1)
+                image = np.flip(image, axis=1)
 
             # Random intensity scaling
-            transformed_image = transformed_image * intensity_scale
+            image = image * intensity_scale
 
-            transformed_images.append(transformed_image)
+            transformed_images.append(image)
 
         return transformed_images
 
@@ -127,7 +129,6 @@ def batch_normalize(images, lower=0, upper=100, epsilon=1e-7):
     normalized_images = []
     for image in images:
         normalized_images.append(normalize(image, lower, upper, epsilon))
-    normalized_images = np.stack(normalized_images)
 
     return normalized_images
 
@@ -145,7 +146,6 @@ def batch_standardize(images, epsilon=1e-7):
     standardized_images = []
     for image in images:
         standardized_images.append(standardize(image, epsilon))
-    standardized_images = np.stack(standardized_images)
 
     return standardized_images
 
