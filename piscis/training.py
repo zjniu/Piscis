@@ -357,7 +357,7 @@ def train_epoch(
 def train_model(
         model_path: str,
         dataset_path: str,
-        dataset_adjustment: Optional[str] = 'normalize',
+        dataset_adjustment: Optional[str] = 'standardize',
         epochs: int = 200,
         random_seed: int = 0,
         batch_size: int = 4,
@@ -379,7 +379,7 @@ def train_model(
     dataset_path : str
         Path to the directory containing training and validation datasets.
     dataset_adjustment : Optional[str], optional
-        Adjustment type applied to dataset. Default is 'normalize'.
+        Adjustment type applied to dataset. Default is 'standardize'.
     epochs : int, optional
         Number of epochs to train the model for. Default is 200.
     random_seed : int, optional

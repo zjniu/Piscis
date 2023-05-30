@@ -9,46 +9,27 @@ from piscis.utils import remove_duplicate_coords
 from piscis.transforms import batch_normalize, batch_standardize, RandomAugment, subpixel_distance_transform
 
 
-def generate_dataset(path, key, adjustment=None,
+def generate_dataset(images_list, coords_list, key, adjustment=None,
                      tile_size=(256, 256), overlap=(0, 0), min_spots=1,
                      train_size=0.70, test_size=0.15):
-
-    image_list = []
-    coords_list = []
-
-    path = Path(path)
-    if path.is_file() and path.suffix == '.npz':
-        datasets = [path]
-    else:
-        datasets = path.glob('*.npz')
-
-    for npz in datasets:
-
-        data = np.load(npz, allow_pickle=True)
-
-        image_list.append(data['x'])
-        coords_list.append(data['y'])
-
-    image_list = np.concatenate(image_list)
-    coords_list = np.concatenate(coords_list, dtype=object)
 
     for i in range(len(coords_list)):
         coords_list[i] = remove_duplicate_coords(coords_list[i])
 
     if adjustment == 'normalize':
-        image_list = np.asarray(batch_normalize(image_list))
+        images_list = batch_normalize(images_list)
     elif adjustment == 'standardize':
-        image_list = np.asarray(batch_standardize(image_list))
+        images_list = batch_standardize(images_list)
+    images_list = np.stack(images_list)
 
-    dt = deeptile.load(image_list)
-    tiles1 = dt.get_tiles(tile_size, overlap).pad()
+    dt = deeptile.load(images_list)
+    tiles1 = dt.get_tiles(tile_size, overlap)
     tiles2 = tiles1.import_data(coords_list, 'coords')
-    nonempty_tiles = [(image, coords) for image, coords in
-                      zip(np.concatenate(tiles1[tiles1.nonempty_indices]),
-                          np.concatenate(tiles2[tiles2.nonempty_indices]))
-                      if len(coords) > min_spots]
+    nonempty_tiles = [(image.compute(), coords)
+                      for tile1, tile2 in zip(tiles1[tiles1.nonempty_indices], tiles2[tiles2.nonempty_indices])
+                      for image, coords in zip(tile1, tile2) if len(coords) > min_spots]
     tiled_images, tiled_coords = zip(*nonempty_tiles)
-    tiled_images = np.array(tiled_images)
+    tiled_images = np.array(tiled_images, dtype=object)
     tiled_coords = np.array(tiled_coords, dtype=object)
 
     size = len(tiled_images)
@@ -76,7 +57,7 @@ def generate_dataset(path, key, adjustment=None,
     return dataset
 
 
-def load_datasets(path, adjustment=None):
+def load_datasets(path, adjustment='standardize'):
 
     train = {'images': [], 'coords': []}
     valid = {'images': [], 'coords': []}
@@ -88,9 +69,9 @@ def load_datasets(path, adjustment=None):
     else:
         datasets = path.glob('*.npz')
 
-    for npz in datasets:
+    for dataset in datasets:
 
-        data = np.load(npz, allow_pickle=True)
+        data = np.load(dataset, allow_pickle=True)
 
         train['images'].append(data['x_train'])
         train['coords'].append(data['y_train'])
@@ -107,13 +88,35 @@ def load_datasets(path, adjustment=None):
     test['coords'] = np.concatenate(test['coords'])
 
     if adjustment == 'normalize':
-        train['images'] = np.asarray(batch_normalize(train['images']))
-        valid['images'] = np.asarray(batch_normalize(valid['images']))
-        test['images'] = np.asarray(batch_normalize(test['images']))
+        train['images'] = batch_normalize(train['images'])
+        valid['images'] = batch_normalize(valid['images'])
+        test['images'] = batch_normalize(test['images'])
+        images = train['images'] + valid['images'] + test['images']
     elif adjustment == 'standardize':
-        train['images'] = np.asarray(batch_standardize(train['images']))
-        valid['images'] = np.asarray(batch_standardize(valid['images']))
-        test['images'] = np.asarray(batch_standardize(test['images']))
+        train['images'] = batch_standardize(train['images'])
+        valid['images'] = batch_standardize(valid['images'])
+        test['images'] = batch_standardize(test['images'])
+        images = train['images'] + valid['images'] + test['images']
+    else:
+        images = list(train['images']) + list(valid['images']) + list(test['images'])
+
+    padded_size = (max(image.shape[0] for image in images), max(image.shape[1] for image in images))
+    for i, image in enumerate(train['images']):
+        constant = np.min(image)
+        train['images'][i] = np.pad(image, ((0, padded_size[0] - image.shape[0]), (0, padded_size[1] - image.shape[1])),
+                                    mode='constant', constant_values=constant)
+    for i, image in enumerate(valid['images']):
+        constant = np.min(image)
+        valid['images'][i] = np.pad(image, ((0, padded_size[0] - image.shape[0]), (0, padded_size[1] - image.shape[1])),
+                                    mode='constant', constant_values=constant)
+    for i, image in enumerate(test['images']):
+        constant = np.min(image)
+        test['images'][i] = np.pad(image, ((0, padded_size[0] - image.shape[0]), (0, padded_size[1] - image.shape[1])),
+                                   mode='constant', constant_values=constant)
+
+    train['images'] = np.stack(train['images'])
+    valid['images'] = np.stack(valid['images'])
+    test['images'] = np.stack(test['images'])
 
     ds = {
         'train': train,

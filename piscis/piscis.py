@@ -98,7 +98,7 @@ class Piscis:
             scale: float = 1.0,
             threshold: float = 0.5,
             min_distance: int = 1,
-            normalize: bool = True,
+            standardize: bool = True,
             intermediates: bool = False
     ) -> Union[Tuple[np.ndarray, np.ndarray], np.ndarray]:
 
@@ -116,8 +116,8 @@ class Piscis:
             Detection threshold between 0 and 1. Default is 0.5.
         min_distance : int, optional
             Minimum distance between spots. Default is 1.
-        normalize : bool, optional
-            Whether to normalize `x`. Default is True.
+        standardize : bool, optional
+            Whether to standardize `x`. Default is True.
         intermediates : bool, optional
             Whether to return intermediate feature maps. Default is False.
 
@@ -130,7 +130,7 @@ class Piscis:
         """
 
         # Preprocess the input.
-        x, batch_axis, x_min, x_max = _preprocess(x, stack, normalize=normalize)
+        x, batch_axis, x_mean, x_std = _preprocess(x, stack, standardize=standardize)
 
         # Create a DeepTile object and get tiles.
         dt = deeptile.load(x, link_data=False, dask=True)
@@ -138,9 +138,9 @@ class Piscis:
         scales = (np.array([self.input_size]) - 1) / (np.array(tile_size) - 1)
         tiles = dt.get_tiles(tile_size=tile_size, overlap=(0.1, 0.1)).pad(mode='symmetric')
 
-        # Normalize tiles if necessary.
-        if x_min is not None:
-            tiles = lift(lambda t: (t - x_min) / (x_max - x_min + 1e-7))(tiles)
+        # Standardize tiles if necessary.
+        if x_mean is not None:
+            tiles = lift(lambda t: (t - x_mean) / (x_std + 1e-7))(tiles)
 
         # Predict spots in tiles and stitch.
         if stack and batch_axis:
@@ -406,7 +406,7 @@ class Piscis:
 def _preprocess(
         x: Union[np.ndarray, da.Array],
         stack: bool,
-        normalize: bool,
+        standardize: bool,
 ) -> Tuple[da.Array, bool, Optional[np.ndarray], Optional[np.ndarray]]:
 
     """Preprocess the input.
@@ -417,8 +417,8 @@ def _preprocess(
         Image or stack of images.
     stack : bool
         Whether `x` is a stack of images.
-    normalize : bool
-        Whether to normalize `x`.
+    standardize : bool
+        Whether to standardize `x`.
 
     Returns
     -------
@@ -426,10 +426,10 @@ def _preprocess(
         Preprocessed image or stack of images.
     batch_axis : bool
         Whether `x` has a batch axis.
-    x_min : np.ndarray or None
-        Minimum values of `x` across batch axis if `normalize` is True, otherwise None.
-    x_max : np.ndarray or None
-        Maximum values of `x` across batch axis if `normalize` is True, otherwise None.
+    x_mean : np.ndarray or None
+        Mean of `x` across each plane if `standardize` is True, otherwise None.
+    x_std : np.ndarray or None
+        Standard deviation of `x` across each plane if `standardize` is True, otherwise None.
 
     Raises
     ------
@@ -443,27 +443,20 @@ def _preprocess(
     # Get the number of input dimensions.
     ndim = x.ndim
 
-    if stack:
-        nnormdim = 3
-    else:
-        nnormdim = 2
-
     # Check the number of dimensions.
-    if ndim == nnormdim:
-        batch_axis = False
-    elif ndim == nnormdim + 1:
+    if (ndim == 4) or ((ndim == 3) and (not stack)):
         batch_axis = True
+    elif (ndim == 2) or ((ndim == 3) and stack):
+        batch_axis = False
     else:
         raise ValueError("Input does not have the correct dimensions.")
 
-    # Normalize the input if necessary.
-    if normalize:
-        axis = tuple(range(ndim - nnormdim, ndim))
-        stat_shape = (*x.shape[:-nnormdim], *((1, ) * nnormdim))
-        x_min = np.min(x, axis=axis).reshape(stat_shape).compute()
-        x_max = np.max(x, axis=axis).reshape(stat_shape).compute()
+    # Standardize the input if necessary.
+    if standardize:
+        x_mean = np.mean(x, axis=(-2, -1))[..., None, None].compute()
+        x_std = np.std(x, axis=(-2, -1))[..., None, None].compute()
     else:
-        x_min = None
-        x_max = None
+        x_mean = None
+        x_std = None
 
-    return x, batch_axis, x_min, x_max
+    return x, batch_axis, x_mean, x_std
