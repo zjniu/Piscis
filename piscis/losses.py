@@ -19,7 +19,7 @@ def spots_loss(deltas_pred, labels_pred, deltas, labels, dilated_labels, epsilon
 def _spots_loss(deltas_pred, labels_pred, deltas, labels, dilated_labels, epsilon, reduction):
 
     rmse = jnp.sqrt(jnp.sum(((deltas - deltas_pred) * dilated_labels) ** 2) / jnp.sum(dilated_labels))
-    bce = weighted_bce_loss(labels_pred, labels, alpha=0.5, epsilon=epsilon, reduction=reduction)
+    bce = weighted_bce_loss(labels_pred, dilated_labels, alpha=0.5, epsilon=epsilon, reduction=reduction)
     sf1 = smoothf1_loss(deltas_pred, labels_pred, labels, dilated_labels, epsilon=epsilon)
 
     return rmse, bce, sf1
