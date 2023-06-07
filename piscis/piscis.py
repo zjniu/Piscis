@@ -12,7 +12,7 @@ from jax import jit
 from jax.lib import xla_bridge
 from pathlib import Path
 from skimage.transform import resize
-from typing import Dict, Optional, Sequence, Tuple, Union
+from typing import Dict, Optional, Tuple, Union
 
 from piscis.models.spots import SpotsModel
 from piscis import utils
@@ -28,13 +28,15 @@ class Piscis:
     ----------
     model_name : str
         Model name.
+    batch_size : int
+        Batch size for the CNN.
     model : SpotsModel
         Instance of the SpotsModel class.
     variables : Dict
         Model variables.
-    batch_size : int
-        Batch size for the CNN.
-    input_size : Sequence[int]
+    adjustment : str
+        Adjustment type applied to images during preprocessing.
+    input_size : Tuple[int, int]
         Input size for the CNN.
     _jitted : Callable
         Compiled model apply function.
@@ -42,20 +44,20 @@ class Piscis:
 
     def __init__(
             self,
-            model: str = 'spots',
+            model_name: str = 'spots',
             batch_size: int = 4,
-            input_size: Optional[Sequence[int]] = None
+            input_size: Optional[Tuple[int, int]] = None
     ) -> None:
 
         """Initialize a Piscis object and compile the model.
 
         Parameters
         ----------
-        model : str, optional
+        model_name : str, optional
             Model name. Default is 'spots'.
         batch_size : int, optional
             Batch size for the CNN. Default is 4.
-        input_size : Optional[Sequence[int]], optional
+        input_size : Optional[Tuple[int, int]], optional
             Input size for the CNN. If None, it is obtained from the model's variables. Default is None.
         """
 
@@ -64,17 +66,17 @@ class Piscis:
             batch_size = 1
 
         # Load the model.
-        self.model_name = model
-        self.model = SpotsModel()
-        with open(TRAINED_MODELS_DIR.joinpath(model), 'rb') as f_model:
-            self.variables = serialization.from_bytes(target=None, encoded_bytes=f_model.read())
-
-        # Set the batch size and input size.
+        self.model_name = model_name
         self.batch_size = batch_size
-        if input_size is None:
-            input_size = self.variables['input_size']
-            input_size = (input_size['0'], input_size['1'])
-        self.input_size = input_size
+        self.model = SpotsModel()
+        with open(TRAINED_MODELS_DIR.joinpath(model_name), 'rb') as f_model:
+            model_dict = serialization.from_bytes(target=None, encoded_bytes=f_model.read())
+            self.variables = model_dict['variables']
+            self.adjustment = model_dict['adjustment']
+            if input_size is None:
+                input_size = model_dict['input_size']
+                input_size = (input_size['0'], input_size['1'])
+            self.input_size = input_size
 
         # Define the jitted model apply function.
         @jit
@@ -96,9 +98,8 @@ class Piscis:
             x: Union[np.ndarray, da.Array],
             stack: bool = False,
             scale: float = 1.0,
-            threshold: float = 0.5,
+            threshold: float = 1.1,
             min_distance: int = 1,
-            standardize: bool = True,
             intermediates: bool = False
     ) -> Union[Tuple[np.ndarray, np.ndarray], np.ndarray]:
 
@@ -113,11 +114,10 @@ class Piscis:
         scale : float, optional
             Scale factor for rescaling `x`. Default is 1.
         threshold : float, optional
-            Detection threshold between 0 and 1. Default is 0.5.
+            Spot detection threshold. Can be interpreted as the minimum number of fully confident pixels necessary to
+            identify a spot. Typical values fall between 1 and 2. Default is 1.1.
         min_distance : int, optional
             Minimum distance between spots. Default is 1.
-        standardize : bool, optional
-            Whether to standardize `x`. Default is True.
         intermediates : bool, optional
             Whether to return intermediate feature maps. Default is False.
 
@@ -130,7 +130,7 @@ class Piscis:
         """
 
         # Preprocess the input.
-        x, batch_axis, x_mean, x_std = _preprocess(x, stack, standardize=standardize)
+        x, batch_axis, x_stats = self._preprocess(x, stack)
 
         # Create a DeepTile object and get tiles.
         dt = deeptile.load(x, link_data=False, dask=True)
@@ -139,8 +139,13 @@ class Piscis:
         tiles = dt.get_tiles(tile_size=tile_size, overlap=(0.1, 0.1)).pad(mode='symmetric')
 
         # Standardize tiles if necessary.
-        if x_mean is not None:
-            tiles = lift(lambda t: (t - x_mean) / (x_std + 1e-7))(tiles)
+        if x_stats is not None:
+            if self.adjustment == 'normalize':
+                x_min, x_max = x_stats
+                tiles = lift(lambda t: (t - x_min) / (x_max - x_min + 1e-7))(tiles)
+            elif self.adjustment == 'standardize':
+                x_mean, x_std = x_stats
+                tiles = lift(lambda t: (t - x_mean) / (x_std + 1e-7))(tiles)
 
         # Predict spots in tiles and stitch.
         if stack and batch_axis:
@@ -318,6 +323,65 @@ class Piscis:
         else:
             return coords
 
+    def _preprocess(
+            self,
+            x: Union[np.ndarray, da.Array],
+            stack: bool
+    ) -> Tuple[da.Array, bool, Optional[Tuple[np.ndarray, np.ndarray]]]:
+
+        """Preprocess the input.
+
+        Parameters
+        ----------
+        x : np.ndarray or dask.array.Array
+            Image or stack of images.
+        stack : bool
+            Whether `x` is a stack of images.
+
+        Returns
+        -------
+        x : Union[np.ndarray, da.Array]
+            Preprocessed image or stack of images.
+        batch_axis : bool
+            Whether `x` has a batch axis.
+        x_stats : Optional[Tuple[np.ndarray, np.ndarray]]]
+            Statistics of `x` across each plane used for image adjustment.
+
+        Raises
+        ------
+        ValueError
+            If `x` does not have the correct dimensions.
+        """
+
+        # Convert the input to a Dask array if necessary.
+        x = da.from_array(x)
+
+        # Get the number of input dimensions.
+        ndim = x.ndim
+
+        # Check the number of dimensions.
+        if (ndim == 4) or ((ndim == 3) and (not stack)):
+            batch_axis = True
+        elif (ndim == 2) or ((ndim == 3) and stack):
+            batch_axis = False
+        else:
+            raise ValueError("Input does not have the correct dimensions.")
+
+        # Standardize the input if necessary.
+        if self.adjustment == 'normalize':
+            x_min = np.min(x, axis=(-2, -1))[..., None, None].compute()
+            x_max = np.max(x, axis=(-2, -1))[..., None, None].compute()
+            x_stats = (x_min, x_max)
+        elif self.adjustment == 'standardize':
+            x_mean = np.mean(x, axis=(-2, -1))[..., None, None].compute()
+            x_std = np.std(x, axis=(-2, -1))[..., None, None].compute()
+            x_stats = (x_mean, x_std)
+        else:
+            x_stats = None
+
+        return x, batch_axis, x_stats
+
+
     def _process(
             self,
             tiles: Tiled,
@@ -401,62 +465,3 @@ class Piscis:
         coords = Output(coords, isimage=False, stackable=False, tile_scales=(1.0, 1.0))
 
         return coords
-
-
-def _preprocess(
-        x: Union[np.ndarray, da.Array],
-        stack: bool,
-        standardize: bool,
-) -> Tuple[da.Array, bool, Optional[np.ndarray], Optional[np.ndarray]]:
-
-    """Preprocess the input.
-
-    Parameters
-    ----------
-    x : np.ndarray or dask.array.Array
-        Image or stack of images.
-    stack : bool
-        Whether `x` is a stack of images.
-    standardize : bool
-        Whether to standardize `x`.
-
-    Returns
-    -------
-    x : dask.array.Array
-        Preprocessed image or stack of images.
-    batch_axis : bool
-        Whether `x` has a batch axis.
-    x_mean : np.ndarray or None
-        Mean of `x` across each plane if `standardize` is True, otherwise None.
-    x_std : np.ndarray or None
-        Standard deviation of `x` across each plane if `standardize` is True, otherwise None.
-
-    Raises
-    ------
-    ValueError
-        If `x` does not have the correct dimensions.
-    """
-
-    # Convert the input to a Dask array if necessary.
-    x = da.from_array(x)
-
-    # Get the number of input dimensions.
-    ndim = x.ndim
-
-    # Check the number of dimensions.
-    if (ndim == 4) or ((ndim == 3) and (not stack)):
-        batch_axis = True
-    elif (ndim == 2) or ((ndim == 3) and stack):
-        batch_axis = False
-    else:
-        raise ValueError("Input does not have the correct dimensions.")
-
-    # Standardize the input if necessary.
-    if standardize:
-        x_mean = np.mean(x, axis=(-2, -1))[..., None, None].compute()
-        x_std = np.std(x, axis=(-2, -1))[..., None, None].compute()
-    else:
-        x_mean = None
-        x_std = None
-
-    return x, batch_axis, x_mean, x_std
