@@ -124,13 +124,29 @@ class RandomAugment:
         return transformed_images
 
 
-def batch_normalize(images, lower=0, upper=100, epsilon=1e-7):
+def batch_adjust(images, adjustment, **kwargs):
 
-    normalized_images = []
-    for image in images:
-        normalized_images.append(normalize(image, lower, upper, epsilon))
+    if adjustment is not None:
+        images = list(images)
+        adjusted_images = np.empty(len(images), dtype=object)
+        for i, image in enumerate(images):
+            adjusted_images[i] = adjust(image, adjustment, **kwargs)
+    else:
+        adjusted_images = images
 
-    return normalized_images
+    return adjusted_images
+
+
+def adjust(image, adjustment, **kwargs):
+
+    if adjustment == 'normalize':
+        image = normalize(image, **kwargs)
+    elif adjustment == 'standardize':
+        image = standardize(image, **kwargs)
+    else:
+        raise ValueError('Adjustment type not supported.')
+
+    return image
 
 
 def normalize(image, lower=0, upper=100, epsilon=1e-7):
@@ -139,15 +155,6 @@ def normalize(image, lower=0, upper=100, epsilon=1e-7):
     image_upper = np.percentile(image, upper)
 
     return (image - image_lower) / (image_upper - image_lower + epsilon)
-
-
-def batch_standardize(images, epsilon=1e-7):
-
-    standardized_images = []
-    for image in images:
-        standardized_images.append(standardize(image, epsilon))
-
-    return standardized_images
 
 
 def standardize(image, epsilon=1e-7):
