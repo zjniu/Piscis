@@ -13,7 +13,7 @@ from pathlib import Path
 from tqdm.auto import tqdm
 from typing import Any, Dict, List, Optional, Tuple
 
-from piscis.data import load_datasets, transform_batch, transform_dataset
+from piscis.data import load_datasets, transform_batch, transform_subdataset
 from piscis.losses import spots_loss
 from piscis.models.spots import SpotsModel
 from piscis.optimizers import sgdw
@@ -53,7 +53,7 @@ def create_train_state(
     key : jnp.ndarray
         Random key used for initialization and training.
     input_size : Tuple[int, int]
-        Size of input images.
+        Size of the input images used for training.
     tx : optax.GradientTransformation
         Optax optimizer used for training.
     variables : Optional[Dict]
@@ -228,7 +228,7 @@ def train_step(
 
 def train_epoch(
         state: TrainState,
-        ds: Dict,
+        dataset: Dict,
         batch_size: int,
         loss_weights: Dict[str, float],
         epoch_learning_rate: float,
@@ -242,7 +242,7 @@ def train_epoch(
     ----------
     state : TrainState
         Current train state.
-    ds : Dict
+    dataset : Dict
         Dataset dictionary.
     batch_size : int
         Batch size for training.
@@ -251,7 +251,7 @@ def train_epoch(
     epoch_learning_rate : float
         Learning rate for the current epoch.
     input_size : Tuple[int, int]
-        Size of input images.
+        Size of the input images used for training.
     coords_max_length : int
         Maximum length of the coordinates sequence.
 
@@ -270,11 +270,11 @@ def train_epoch(
     # Update the learning rate.
     state.opt_state.hyperparams['learning_rate'] = jnp.array(epoch_learning_rate, dtype=float)
 
-    # Split the random key and transform datasets.
+    # Split the random key and transform the training set.
     key = random.fold_in(state.key, state.epoch)
     subkeys = random.split(key, 3)
-    train_ds = transform_dataset(ds['train'], input_size, key=subkeys[0])
-    valid_ds = transform_dataset(ds['valid'], input_size)
+    train_ds = transform_subdataset(dataset['train'], input_size, key=subkeys[0])
+    valid_ds = dataset['valid']
 
     train_ds_size = len(train_ds['images'])
     valid_ds_size = len(valid_ds['images'])
@@ -283,7 +283,7 @@ def train_epoch(
     # Initialize the progress bar.
     pbar = tqdm(total=n_steps)
 
-    # Shuffle the training dataset.
+    # Shuffle the training set.
     perms = random.permutation(subkeys[1], train_ds_size)
     perms = perms[:n_steps * batch_size]
     perms = perms.reshape((n_steps, batch_size))
@@ -357,11 +357,12 @@ def train_epoch(
 def train_model(
         model_path: str,
         dataset_path: str,
-        dataset_adjustment: Optional[str] = 'standardize',
-        epochs: int = 200,
+        adjustment: Optional[str] = 'standardize',
+        input_size: Tuple[int, int] = (256, 256),
         random_seed: int = 0,
         batch_size: int = 4,
         learning_rate: float = 0.1,
+        epochs: int = 200,
         warmup_epochs: int = 10,
         decay_epochs: int = 100,
         decay_rate: float = 0.5,
@@ -377,16 +378,18 @@ def train_model(
         Path to a new or existing model.
     dataset_path : str
         Path to the directory containing training and validation datasets.
-    dataset_adjustment : Optional[str], optional
-        Adjustment type applied to dataset. Default is 'standardize'.
-    epochs : int, optional
-        Number of epochs to train the model for. Default is 200.
+    adjustment : Optional[str], optional
+        Adjustment type applied to images. Default is 'standardize'.
+    input_size : Tuple[int, int], optional
+        Size of the input images used for training. Default is (256, 256).
     random_seed : int, optional
         Random seed used for initialization and training. Default is 0.
     batch_size : int, optional
         Batch size for training. Default is 4.
     learning_rate : float, optional
-        Learning rate for the optimizer. Default is 0.001.
+        Learning rate for the optimizer. Default is 0.1.
+    epochs : int, optional
+        Number of epochs to train the model for. Default is 200.
     warmup_epochs : int, optional
         Number of warmup epochs for learning rate scheduling. Default is 10.
     decay_epochs : int, optional
@@ -395,8 +398,6 @@ def train_model(
         Decay rate for learning rate scheduling. Default is 0.5.
     decay_transition_epochs : int, optional
         Number of epochs for each decay transition in learning rate scheduling. Default is 10.
-    optimizer : Optional[optax.GradientTransformation], optional
-        Optax optimizer used for training. Default is Adabelief with eps=1e-8 and weight decay=1e-5.
     loss_weights : Optional[Dict[str, float]], optional
         Weights for terms in the overall loss function. Default is {'rmse': 0.4, 'bce': 0.2 'sf1': 1.0}.
 
@@ -418,11 +419,10 @@ def train_model(
 
     # Load datasets.
     print('Loading datasets...')
-    ds = load_datasets(dataset_path, adjustment=dataset_adjustment)
-    train_images_shape = ds['train']['images'].shape
-    input_size = train_images_shape[1:3]
-    coords_max_length = \
-        max([len(coords) for coords in ds['train']['coords']] + [len(coords) for coords in ds['valid']['coords']])
+    dataset = load_datasets(dataset_path, adjustment, load_train=True, load_valid=True, load_test=False)
+    dataset['valid'] = transform_subdataset(dataset['valid'], input_size)
+    coords_max_length = max([len(coords) for coords in dataset['train']['coords']] +
+                            [len(coords) for coords in dataset['valid']['coords']])
 
     # Create the random key.
     key = random.PRNGKey(random_seed)
@@ -431,7 +431,7 @@ def train_model(
     warmup = [learning_rate * i / warmup_epochs for i in range(warmup_epochs)]
     constant = [learning_rate] * (epochs - warmup_epochs - decay_epochs)
     decay = [learning_rate * decay_rate ** np.ceil(i / decay_transition_epochs) for i in range(1, decay_epochs + 1)]
-    schedule = warmup + constant + decay
+    learning_rate_schedule = warmup + constant + decay
 
     # Create the optimizer.
     optimizer = partial(sgdw, momentum=0.9, nesterov=True, weight_decay=1e-4)
@@ -488,11 +488,11 @@ def train_model(
         batch_metrics_log = checkpoint['batch_metrics_log']
         epoch_metrics_log = checkpoint['epoch_metrics_log']
 
-    for epoch_learning_rate in schedule:
+    for epoch_learning_rate in learning_rate_schedule:
 
         # Train the model for a single epoch.
         state, batch_metrics, epoch_metrics = \
-            train_epoch(state, ds, batch_size, loss_weights, epoch_learning_rate, input_size, coords_max_length)
+            train_epoch(state, dataset, batch_size, loss_weights, epoch_learning_rate, input_size, coords_max_length)
 
         # Update batch metrics and epoch metrics logs.
         batch_metrics_log += batch_metrics
@@ -506,8 +506,15 @@ def train_model(
             save_kwargs={'state': {'save_args': save_args}}
         )
 
-    # Save the model weights.
-    variables = {'params': state.params, 'batch_stats': state.batch_stats, 'input_size': input_size}
-    bytes_model = serialization.to_bytes(variables)
+    # Save the model.
+    model_dict = {
+        'variables': {
+            'params': state.params,
+            'batch_stats': state.batch_stats
+        },
+        'adjustment': adjustment,
+        'input_size': input_size
+    }
+    bytes_model = serialization.to_bytes(model_dict)
     with open(model_path, 'wb') as f_model:
         f_model.write(bytes_model)
