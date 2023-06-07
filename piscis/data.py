@@ -1,42 +1,72 @@
 import deeptile
+import jax.numpy as jnp
 import numpy as np
 
 from jax import random
 from pathlib import Path
 from scipy import ndimage
+from typing import Dict, List, Optional, Tuple
 
-from piscis.utils import remove_duplicate_coords
-from piscis.transforms import batch_normalize, batch_standardize, RandomAugment, subpixel_distance_transform
+from piscis.utils import pad, remove_duplicate_coords
+from piscis.transforms import batch_adjust, RandomAugment, subpixel_distance_transform
 
 
-def generate_dataset(images_list, coords_list, key, adjustment=None,
-                     tile_size=(256, 256), overlap=(0, 0), min_spots=1,
-                     train_size=0.70, test_size=0.15):
+def generate_dataset(
+        path: str,
+        images: List,
+        coords: List,
+        key: jnp.ndarray,
+        tile_size: Tuple[int, int] = (256, 256),
+        min_spots: int = 1,
+        train_size: float = 0.70,
+        test_size: float = 0.15
+) -> None:
 
-    for i in range(len(coords_list)):
-        coords_list[i] = remove_duplicate_coords(coords_list[i])
+    """Generate a dataset from images and spot coordinates.
 
-    if adjustment == 'normalize':
-        images_list = batch_normalize(images_list)
-    elif adjustment == 'standardize':
-        images_list = batch_standardize(images_list)
-    images_list = np.stack(images_list)
+    Parameters
+    ----------
+    path : str
+        Path to save dataset.
+    images : List
+        List of images.
+    coords : List
+        List of ground truth spot coordinates.
+    key : jnp.ndarray
+        Random key used for splitting the dataset into training, validation, and test sets.
+    tile_size : Tuple[int, int], optional
+        Tile size used for splitting images. Default is (256, 256).
+    min_spots : int, optional
+        Minimum number of spots per tile. Default is 1.
+    train_size : float, optional
+        Fraction of dataset used for training. Default is 0.70.
+    test_size : float, optional
+        Fraction of dataset used for testing. Default is 0.15.
+    """
 
-    dt = deeptile.load(images_list)
-    tiles1 = dt.get_tiles(tile_size, overlap)
-    tiles2 = tiles1.import_data(coords_list, 'coords')
-    nonempty_tiles = [(image.compute(), coords)
+    # Remove duplicate coordinates.
+    for i in range(len(coords)):
+        coords[i] = remove_duplicate_coords(coords[i])
+
+    # Create a DeepTile object and get tiles.
+    images = np.stack(images)
+    dt = deeptile.load(images)
+    tiles1 = dt.get_tiles(tile_size, (0, 0))
+    tiles2 = tiles1.import_data(coords, 'coords')
+    nonempty_tiles = [(image.compute(), coord)
                       for tile1, tile2 in zip(tiles1[tiles1.nonempty_indices], tiles2[tiles2.nonempty_indices])
-                      for image, coords in zip(tile1, tile2) if len(coords) > min_spots]
+                      for image, coord in zip(tile1, tile2) if len(coord) > min_spots]
     tiled_images, tiled_coords = zip(*nonempty_tiles)
     tiled_images = np.array(tiled_images, dtype=object)
     tiled_coords = np.array(tiled_coords, dtype=object)
 
+    # Randomly shuffle the tiles.
     size = len(tiled_images)
     perms = np.asarray(random.permutation(key, size))
     tiled_images = tiled_images[perms]
     tiled_coords = tiled_coords[perms]
 
+    # Split the dataset into training, validation, and test sets.
     split_indices = np.rint(np.cumsum((train_size, test_size)) * size).astype(int)
     x_train = tiled_images[:split_indices[0]]
     y_train = tiled_coords[:split_indices[0]]
@@ -45,133 +75,173 @@ def generate_dataset(images_list, coords_list, key, adjustment=None,
     x_test = tiled_images[split_indices[0]:split_indices[1]]
     y_test = tiled_coords[split_indices[0]:split_indices[1]]
 
-    dataset = {
-        'x_train': x_train,
-        'y_train': y_train,
-        'x_valid': x_valid,
-        'y_valid': y_valid,
-        'x_test': x_test,
-        'y_test': y_test
-    }
+    # Create the dataset dictionary.
+    np.savez(path, x_train=x_train, y_train=y_train, x_valid=x_valid, y_valid=y_valid, x_test=x_test, y_test=y_test)
+
+
+def load_datasets(
+        path: str,
+        adjustment: str = 'standardize',
+        load_train: bool = True,
+        load_valid: bool = True,
+        load_test: bool = True
+) -> Dict:
+
+    """Load datasets from a directory or file.
+
+    Parameters
+    ----------
+    path : str
+        Path to a dataset or directory of datasets.
+    adjustment : str, optional
+        Adjustment type applied to images. Default is 'standardize'.
+    load_train : bool, optional
+        Whether to load the training set. Default is True.
+    load_valid : bool, optional
+        Whether to load the validation set. Default is True.
+    load_test : bool, optional
+        Whether to load the test set. Default is True.
+
+    Returns
+    -------
+    dataset : Dict
+        Dataset dictionary.
+    """
+
+    # Create empty dictionaries.
+    train = {'images': [], 'coords': []}
+    valid = {'images': [], 'coords': []}
+    test = {'images': [], 'coords': []}
+    dataset = {}
+
+    # Get dataset paths.
+    path = Path(path)
+    if path.is_file() and path.suffix == '.npz':
+        dataset_paths = [path]
+    else:
+        dataset_paths = path.glob('*.npz')
+
+    # Load datasets.
+    for dataset_path in dataset_paths:
+        npz = np.load(dataset_path, allow_pickle=True)
+        if load_train:
+            train['images'].append(npz['x_train'])
+            train['coords'].append(npz['y_train'])
+        if load_valid:
+            valid['images'].append(npz['x_valid'])
+            valid['coords'].append(npz['y_valid'])
+        if load_test:
+            test['images'].append(npz['x_test'])
+            test['coords'].append(npz['y_test'])
+
+    # Combine datasets and adjust images if necessary.
+    if load_train:
+        train['images'] = np.concatenate(train['images'])
+        train['images'] = batch_adjust(train['images'], adjustment)
+        train['coords'] = np.concatenate(train['coords'])
+        dataset['train'] = train
+    if load_valid:
+        valid['images'] = np.concatenate(valid['images'])
+        valid['images'] = batch_adjust(valid['images'], adjustment)
+        valid['coords'] = np.concatenate(valid['coords'])
+        dataset['valid'] = valid
+    if load_test:
+        test['images'] = np.concatenate(test['images'])
+        test['images'] = batch_adjust(test['images'], adjustment)
+        test['coords'] = np.concatenate(test['coords'])
+        dataset['test'] = test
 
     return dataset
 
 
-def load_datasets(path, adjustment='standardize'):
+def transform_subdataset(
+        subds: Dict,
+        input_size: Tuple[int, int],
+        min_spots: int = 1,
+        key: Optional[jnp.ndarray] = None
+) -> Dict:
 
-    train = {'images': [], 'coords': []}
-    valid = {'images': [], 'coords': []}
-    test = {'images': [], 'coords': []}
+    """Transform subdataset for model training and validation.
 
-    path = Path(path)
-    if path.is_file() and path.suffix == '.npz':
-        datasets = [path]
-    else:
-        datasets = path.glob('*.npz')
+    Parameters
+    ----------
+    subds : Dict
+        Subdataset dictionary.
+    input_size : Tuple[int, int]
+        Size of the input images used during training.
+    min_spots : int, optional
+        Minimum number of spots per image. Default is 1.
+    key : Optional[jnp.ndarray], optional
+        Random key used for data augmentation. Default is None.
 
-    for dataset in datasets:
-
-        data = np.load(dataset, allow_pickle=True)
-
-        train['images'].append(data['x_train'])
-        train['coords'].append(data['y_train'])
-        valid['images'].append(data['x_valid'])
-        valid['coords'].append(data['y_valid'])
-        test['images'].append(data['x_test'])
-        test['coords'].append(data['y_test'])
-
-    train['images'] = np.concatenate(train['images'])
-    train['coords'] = np.concatenate(train['coords'])
-    valid['images'] = np.concatenate(valid['images'])
-    valid['coords'] = np.concatenate(valid['coords'])
-    test['images'] = np.concatenate(test['images'])
-    test['coords'] = np.concatenate(test['coords'])
-
-    if adjustment == 'normalize':
-        train['images'] = batch_normalize(train['images'])
-        valid['images'] = batch_normalize(valid['images'])
-        test['images'] = batch_normalize(test['images'])
-        images = train['images'] + valid['images'] + test['images']
-    elif adjustment == 'standardize':
-        train['images'] = batch_standardize(train['images'])
-        valid['images'] = batch_standardize(valid['images'])
-        test['images'] = batch_standardize(test['images'])
-        images = train['images'] + valid['images'] + test['images']
-    else:
-        images = list(train['images']) + list(valid['images']) + list(test['images'])
-
-    padded_size = (max(image.shape[0] for image in images), max(image.shape[1] for image in images))
-    for i, image in enumerate(train['images']):
-        constant = np.min(image)
-        train['images'][i] = np.pad(image, ((0, padded_size[0] - image.shape[0]), (0, padded_size[1] - image.shape[1])),
-                                    mode='constant', constant_values=constant)
-    for i, image in enumerate(valid['images']):
-        constant = np.min(image)
-        valid['images'][i] = np.pad(image, ((0, padded_size[0] - image.shape[0]), (0, padded_size[1] - image.shape[1])),
-                                    mode='constant', constant_values=constant)
-    for i, image in enumerate(test['images']):
-        constant = np.min(image)
-        test['images'][i] = np.pad(image, ((0, padded_size[0] - image.shape[0]), (0, padded_size[1] - image.shape[1])),
-                                   mode='constant', constant_values=constant)
-
-    train['images'] = np.stack(train['images'])
-    valid['images'] = np.stack(valid['images'])
-    test['images'] = np.stack(test['images'])
-
-    ds = {
-        'train': train,
-        'valid': valid,
-        'test': test
-    }
-
-    return ds
-
-
-def transform_dataset(ds, input_size, min_spots=1, key=None):
+    Returns
+    -------
+    transformed_subds : Dict
+        Transformed subdataset dictionary.
+    """
 
     if key is not None:
 
-        base_scales = np.ones(len(ds['images']))
+        base_scales = np.ones(len(subds['images']))
 
-        # Create transformer
+        # Create random augmentation transformer.
         transformer = RandomAugment()
-        transformer.generate_transforms(ds['images'], key, base_scales, input_size)
+        transformer.generate_transforms(subds['images'], key, base_scales, input_size)
 
-        # Apply transformations
-        images = transformer.apply_image_transforms(ds['images'], interpolation='bilinear')
-        coords_list = transformer.apply_coord_transforms(ds['coords'], filter_coords=True)
+        # Apply transformations.
+        images = transformer.apply_image_transforms(subds['images'], interpolation='bilinear')
+        coords_list = transformer.apply_coord_transforms(subds['coords'], filter_coords=True)
 
     else:
 
-        images = ds['images'].tolist()
-        coords_list = ds['coords'].tolist()
+        images = pad(subds['images'])
+        coords_list = list(subds['coords'])
 
-    # Remove images with less than min_spots
+    # Remove images with less than min_spots.
     counts = np.array([len(coord) for coord in coords_list])
     pop_indices = np.where((counts < min_spots))[0]
     for index in np.flip(pop_indices):
         images.pop(index)
         coords_list.pop(index)
-
     coords = np.empty(len(coords_list), dtype=object)
     coords[:] = coords_list
 
-    transformed_ds = {
+    # Created the transformed subdataset dictionary.
+    transformed_subds = {
         'images': np.array(images)[:, :, :, None],
         'coords': coords,
     }
 
-    return transformed_ds
+    return transformed_subds
 
 
-def transform_batch(batch, coords_pad_length=None, dilation_iterations=1):
+def transform_batch(
+        batch: Dict,
+        coords_pad_length: Optional[int] = None,
+        dilation_iterations: int = 1
+):
 
-    output_shape = batch['images'].shape[1:3]
+    """Transform batch for model training and validation.
+
+    Parameters
+    ----------
+    batch : Dict
+        Batch dictionary.
+    coords_pad_length : Optional[int], optional
+        Padded length of the coordinates sequence. Default is None.
+    dilation_iterations : int, optional
+        Number of label dilation iterations. Default is 1.
+    """
+
+    images = batch['images']
     coords = batch['coords']
+    output_shape = images.shape[1:3]
 
+    # Apply subpixel distance transform.
     deltas, labels, _ = subpixel_distance_transform(coords, coords_pad_length, output_shape)
     labels = np.asarray(labels)
 
+    # Dilate labels if necessary.
     if dilation_iterations > 0:
         dilated_labels = []
         structure = np.ones((3, 3, 1), dtype=bool)
@@ -182,8 +252,9 @@ def transform_batch(batch, coords_pad_length=None, dilation_iterations=1):
     else:
         dilated_labels = labels
 
+    # Create the transformed batch dictionary.
     transformed_batch = {
-        'images': batch['images'],
+        'images': images,
         'deltas': deltas,
         'labels': labels,
         'dilated_labels': dilated_labels
