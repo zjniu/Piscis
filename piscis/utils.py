@@ -91,7 +91,7 @@ def scanned_apply_deltas(
     return counts
 
 
-vmap_scanned_apply_deltas = vmap(scanned_apply_deltas, in_axes=(0, 0))
+vmap_scanned_apply_deltas = vmap(scanned_apply_deltas, in_axes=(0, 0, None, None))
 
 
 def _scanned_apply_deltas(
