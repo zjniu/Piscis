@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from piscis.data import load_datasets, transform_batch, transform_dataset
 from piscis.losses import spots_loss
 from piscis.models.spots import SpotsModel
-from piscis.optimizers import adabelief
+from piscis.optimizers import sgdw
 
 
 class TrainState(train_state.TrainState, ABC):
@@ -361,12 +361,11 @@ def train_model(
         epochs: int = 200,
         random_seed: int = 0,
         batch_size: int = 4,
-        learning_rate: float = 0.001,
+        learning_rate: float = 0.1,
         warmup_epochs: int = 10,
         decay_epochs: int = 100,
         decay_rate: float = 0.5,
         decay_transition_epochs: int = 10,
-        optimizer: Optional[optax.GradientTransformation] = None,
         loss_weights: Optional[Dict[str, float]] = None
 ) -> None:
 
@@ -434,9 +433,8 @@ def train_model(
     decay = [learning_rate * decay_rate ** np.ceil(i / decay_transition_epochs) for i in range(1, decay_epochs + 1)]
     schedule = warmup + constant + decay
 
-    # Default optimizer.
-    if optimizer is None:
-        optimizer = partial(adabelief, eps=1e-8, weight_decay=1e-5)
+    # Create the optimizer.
+    optimizer = partial(sgdw, momentum=0.9, nesterov=True, weight_decay=1e-4)
     tx = optax.inject_hyperparams(optimizer)(learning_rate=learning_rate)
 
     # Default loss weights.
