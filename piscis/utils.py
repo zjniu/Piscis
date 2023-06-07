@@ -243,6 +243,60 @@ def _search_convergence(
     return sources
 
 
+def pad_and_stack(images: Sequence[np.ndarray]) -> np.ndarray:
+
+    """Pad and stack images.
+
+    Parameters
+    ----------
+    images : Sequence[np.ndarray]
+        List of images to pad and stack.
+
+    Returns
+    -------
+    stacked_images : np.ndarray
+        Stacked images.
+    """
+
+    padded_images = pad(images)
+    stacked_images = np.stack(padded_images)
+
+    return stacked_images
+
+
+def pad(images: Sequence[np.ndarray]) -> Sequence[np.ndarray]:
+
+    """Pad images to the same size.
+
+    Parameters
+    ----------
+    images : Sequence[np.ndarray]
+        List of images to pad.
+
+    Returns
+    -------
+    padded_images : Sequence[np.ndarray]
+        List of padded images.
+    """
+
+    # Compute the padded image size.
+    padded_size = (max(image.shape[0] for image in images), max(image.shape[1] for image in images))
+
+    # Pad images.
+    padded_images = []
+    for image in images:
+        pad_i = padded_size[0] - image.shape[0]
+        pad_j = padded_size[1] - image.shape[1]
+        pad_width = ((0, pad_i), (0, pad_j))
+        if (pad_i > 0) or (pad_j > 0):
+            padded_image = np.pad(image, pad_width)
+        else:
+            padded_image = image
+        padded_images.append(padded_image)
+
+    return padded_images
+
+
 def remove_duplicate_coords(
         coords: np.ndarray,
         threshold: int = 1
