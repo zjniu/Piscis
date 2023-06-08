@@ -4,26 +4,80 @@ import numpy as np
 
 from jax import jit, random, vmap
 from scipy import ndimage
+from typing import Any, List, Optional, Sequence, Tuple
 
 
 class RandomAugment:
 
-    def __init__(self):
+    """Transformer for random data augmentation.
 
-        self.output_shape = None
-        self.intensity_scales = []
+    Attributes
+    ----------
+    output_size : Optional[Tuple[int, int]]
+        Output size of the transformer.
+    scales : List[float]
+        List of image scales.
+    dxys : List[Tuple[float, float]]
+        List of image translation vectors.
+    thetas : List[float]
+        List of image rotation angles.
+    affines : List[np.ndarray]
+        List of affine transformation matrices.
+    flips0 : List[bool]
+        List of booleans for flipping along axis 0.
+    flips1 : List[bool]
+        List of booleans for flipping along axis 1.
+    intensity_scales : List[float]
+        List of image intensity scale factors.
+    """
+
+    def __init__(self) -> None:
+
+        """Initialize a RandomAugment object."""
+
+        self.output_size = None
         self.scales = []
         self.dxys = []
         self.thetas = []
         self.affines = []
         self.flips0 = []
         self.flips1 = []
+        self.intensity_scales = []
 
-    def generate_transforms(self, images, key, base_scales, output_shape, max_intensity_scale_factor=5,
-                            min_scale_factor=0.75, max_scale_factor=1.25):
+    def generate_transforms(
+            self,
+            images: Sequence[np.ndarray],
+            key: jnp.ndarray,
+            base_scales: Sequence[float],
+            output_size: Tuple[int, int],
+            min_scale_factor: float = 0.75,
+            max_scale_factor: float = 1.25,
+            max_intensity_scale_factor: float = 5
+    ) -> None:
 
-        # Reset
-        self.output_shape = output_shape
+        """Generate random transformations.
+
+        Parameters
+        ----------
+        images : Sequence[np.ndarray]
+            Images to transform.
+        key : jnp.ndarray
+            Random key used for generating random transformations.
+        base_scales : Sequence[float]
+            List of base scales for each image.
+        output_size : Tuple[int, int]
+            Output size of the transformer.
+        min_scale_factor : float, optional
+            Minimum scale factor. Default is 0.75.
+        max_scale_factor : float, optional
+            Maximum scale factor. Default is 1.25.
+        max_intensity_scale_factor : float, optional
+            Maximum intensity scale factor. Intensity scale factors are sampled from a log-uniform distribution with
+            support on the interval [1 / `max_intensity_scale_factor`, `max_intensity_scale_factor`]. Default is 5.
+        """
+
+        # Reset class attributes.
+        self.output_size = output_size
         self.flips0 = []
         self.flips1 = []
         self.scales = []
@@ -34,42 +88,61 @@ class RandomAugment:
 
         for image, base_scale in zip(images, base_scales):
 
-            # Random flip
+            # Random flips.
             key, *subkeys = random.split(key, 3)
             flip0 = random.uniform(subkeys[0]) > 0.5
             self.flips0.append(float(flip0))
             flip1 = random.uniform(subkeys[1]) > 0.5
             self.flips1.append(float(flip1))
 
-            # Random scaling
+            # Random scaling.
             key, subkey = random.split(key)
             scale = base_scale * (min_scale_factor + (max_scale_factor - min_scale_factor) * random.uniform(subkey))
             self.scales.append(float(scale))
 
-            # Random translation
+            # Random translation.
             key, subkey = random.split(key)
-            dxy = np.maximum(0, np.array([image.shape[1] * scale - output_shape[1],
-                                          image.shape[0] * scale - output_shape[0]]))
-            dxy = (random.uniform(subkey, (2,)) - 0.5) * dxy
+            dxy = np.maximum(0, np.array([image.shape[1] * scale - output_size[1],
+                                          image.shape[0] * scale - output_size[0]]))
+            dxy = (random.uniform(subkey, (2, )) - 0.5) * dxy
             self.dxys.append(np.asarray(dxy))
 
-            # Random rotation
+            # Random rotation.
             key, subkey = random.split(key)
             theta = random.uniform(subkey) * 2 * np.pi
             self.thetas.append(float(theta))
 
-            # Construct affine transformation
+            # Construct affine transformation.
             image_center = (image.shape[1] / 2, image.shape[0] / 2)
             affine = cv.getRotationMatrix2D(image_center, float(theta * 180 / np.pi), float(scale))
-            affine[:, 2] += np.array(output_shape) / 2 - np.array(image_center) + dxy
+            affine[:, 2] += np.array(output_size) / 2 - np.array(image_center) + dxy
             self.affines.append(affine)
 
-            # Random intensity scaling
+            # Random intensity scaling.
             key, subkey = random.split(key)
             intensity_scale = jnp.exp((random.uniform(subkey) - 0.5) * 2 * jnp.log(max_intensity_scale_factor))
             self.intensity_scales.append(float(intensity_scale))
 
-    def apply_coord_transforms(self, coords, filter_coords=True):
+    def apply_coord_transforms(
+            self,
+            coords: Sequence[np.ndarray],
+            filter_coords: bool = True
+    ) -> List[np.ndarray]:
+
+        """Apply random transformations to coordinates.
+
+        Parameters
+        ----------
+        coords : Sequence[np.ndarray]
+            Coordinates to transform.
+        filter_coords : bool, optional
+            Whether to filter coordinates outside the transformed image. Default is True.
+
+        Returns
+        -------
+        transformed_coords : List[np.ndarray]
+            Transformed coordinates.
+        """
 
         transformed_coords = []
 
@@ -81,21 +154,45 @@ class RandomAugment:
 
             # Random flip
             if flip0:
-                transformed_coord[:, 0] = self.output_shape[0] - 1 - transformed_coord[:, 0]
+                transformed_coord[:, 0] = self.output_size[0] - 1 - transformed_coord[:, 0]
             if flip1:
-                transformed_coord[:, 1] = self.output_shape[1] - 1 - transformed_coord[:, 1]
+                transformed_coord[:, 1] = self.output_size[1] - 1 - transformed_coord[:, 1]
 
             # Filter coordinates outside transformed image
             if filter_coords:
                 transformed_coord = transformed_coord[np.all((transformed_coord > -0.5) &
-                                                             (transformed_coord < np.array(self.output_shape) - 0.5),
+                                                             (transformed_coord < np.array(self.output_size) - 0.5),
                                                              axis=1)]
 
             transformed_coords.append(transformed_coord)
 
         return transformed_coords
 
-    def apply_image_transforms(self, images, interpolation='nearest'):
+    def apply_image_transforms(
+            self,
+            images: Sequence[np.ndarray],
+            interpolation: str = 'nearest'
+    ) -> List[np.ndarray]:
+
+        """Apply random transformations to images.
+
+        Parameters
+        ----------
+        images : Sequence[np.ndarray]
+            Images to transform.
+        interpolation : str, optional
+            Interpolation mode for image scaling. Supported modes are 'nearest' or 'bilinear'. Default is 'nearest'.
+
+        Returns
+        -------
+        transformed_images : List[np.ndarray]
+            Transformed images.
+
+        Raises
+        ------
+        ValueError
+            If the `interpolation` mode is not supported.
+        """
 
         transformed_images = []
 
@@ -104,11 +201,11 @@ class RandomAugment:
 
             # Apply affine transformation
             if interpolation == 'nearest':
-                image = cv.warpAffine(image, M=affine, dsize=self.output_shape, flags=cv.INTER_NEAREST)
+                image = cv.warpAffine(image, M=affine, dsize=self.output_size, flags=cv.INTER_NEAREST)
             elif interpolation == 'bilinear':
-                image = cv.warpAffine(image, M=affine, dsize=self.output_shape, flags=cv.INTER_LINEAR)
+                image = cv.warpAffine(image, M=affine, dsize=self.output_size, flags=cv.INTER_LINEAR)
             else:
-                raise ValueError('Interpolation mode not supported.')
+                raise ValueError('Interpolation mode is not supported.')
 
             # Random flip
             if flip0:
@@ -124,7 +221,28 @@ class RandomAugment:
         return transformed_images
 
 
-def batch_adjust(images, adjustment, **kwargs):
+def batch_adjust(
+        images: Sequence[np.ndarray],
+        adjustment: str,
+        **kwargs: Any
+) -> Sequence[np.ndarray]:
+
+    """Batch adjust images.
+
+    Parameters
+    ----------
+    images : Sequence[np.ndarray]
+        Images to adjust.
+    adjustment : str
+        Adjustment type. Supported types are 'normalize' and 'standardize'.
+    **kwargs : Any
+        Keyword arguments for the adjustment function.
+
+    Returns
+    -------
+    adjusted_images : Sequence[np.ndarray]
+        Adjusted images.
+    """
 
     if adjustment is not None:
         images = list(images)
@@ -137,80 +255,203 @@ def batch_adjust(images, adjustment, **kwargs):
     return adjusted_images
 
 
-def adjust(image, adjustment, **kwargs):
+def adjust(
+        image: np.ndarray,
+        adjustment: str,
+        **kwargs: Any
+) -> np.ndarray:
 
-    if adjustment == 'normalize':
-        image = normalize(image, **kwargs)
+    """Adjust an image.
+
+    Parameters
+    ----------
+    image : np.ndarray
+        Image to adjust.
+    adjustment : str
+        Adjustment type. Supported types are 'normalize' and 'standardize'.
+    **kwargs : Any
+        Keyword arguments for the adjustment function.
+
+    Returns
+    -------
+    adjusted_image : np.ndarray
+        Adjusted image.
+
+    Raises
+    ------
+    ValueError
+        If the `adjustment` type is not supported.
+    """
+
+    if adjustment is None:
+        adjusted_image = image
+    elif adjustment == 'normalize':
+        adjusted_image = normalize(image, **kwargs)
     elif adjustment == 'standardize':
-        image = standardize(image, **kwargs)
+        adjusted_image = standardize(image, **kwargs)
     else:
-        raise ValueError('Adjustment type not supported.')
+        raise ValueError('Adjustment type is not supported.')
 
-    return image
+    return adjusted_image
 
 
-def normalize(image, lower=0, upper=100, epsilon=1e-7):
+def normalize(
+        image: np.ndarray,
+        lower: float = 0,
+        upper: float = 100,
+        epsilon: float = 1e-7
+) -> np.ndarray:
+
+    """Normalize an image to the range [0, 1] based on the specified percentiles.
+
+    Parameters
+    ----------
+    image : np.ndarray
+        Image to normalize.
+    lower : float, optional
+        Lower percentile. Default is 0.
+    upper : float, optional
+        Upper percentile. Default is 100.
+    epsilon : float, optional
+        Small constant for numerical stability. Default is 1e-7.
+
+    Returns
+    -------
+    normalized_image : np.ndarray
+        Normalized image.
+    """
 
     image_lower = np.percentile(image, lower)
     image_upper = np.percentile(image, upper)
+    normalized_image = (image - image_lower) / (image_upper - image_lower + epsilon)
 
-    return (image - image_lower) / (image_upper - image_lower + epsilon)
-
-
-def standardize(image, epsilon=1e-7):
-
-    return (image - np.mean(image)) / (np.std(image) + epsilon)
+    return normalized_image
 
 
-def subpixel_distance_transform(coords_list, coords_pad_length=None, shape=(256, 256), dy=1.0, dx=1.0):
+def standardize(
+        image: np.ndarray,
+        epsilon: float = 1e-7
+) -> np.ndarray:
 
-    """For each pixel in an image, return the vertical and horizontal distances to a point in
-    ``coords`` that is in the pixel nearest to it.
+    """Standardize an image to zero mean and unit variance.
+
+    Parameters
+    ----------
+    image : np.ndarray
+        Image to standardize.
+    epsilon : float, optional
+        Small constant for numerical stability. Default is 1e-7.
+
+    Returns
+    -------
+    standardized_image : np.ndarray
+        Standardized image.
     """
 
-    batch_size = len(coords_list)
-    labels = np.zeros((batch_size,) + shape, dtype=bool)
+    standardized_image = (image - np.mean(image)) / (np.std(image) + epsilon)
 
-    max_num_coords = np.max([len(coords) for coords in coords_list])
+    return standardized_image
+
+
+def subpixel_distance_transform(
+        coords: Sequence[np.ndarray],
+        coords_pad_length: Optional[int] = None,
+        output_size: Tuple[int, int] = (256, 256),
+        dy: float = 1.0,
+        dx: float = 1.0
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+
+    """Apply the subpixel distance transform to a list of coordinates.
+
+    Generate an array where each pixel is a vector to the nearest point in `coords`.
+
+    Parameters
+    ----------
+    coords : Sequence[np.ndarray]
+        List of coordinates.
+    coords_pad_length : Optional[int], optional
+        Padded length of the coordinates sequence. Default is None.
+    output_size : Tuple[int, int], optional
+        Size of output arrays. Default is (256, 256).
+    dy : float, optional
+        Pixel size in the y-direction. Default is 1.0.
+    dx : float, optional
+        Pixel size in the x-direction. Default is 1.0.
+
+    Returns
+    -------
+    deltas : jnp.ndarray
+        Array where each pixel is a vector to the nearest point in `coords`.
+    labels : jnp.ndarray
+        Array where each pixel is a boolean for whether it contains a point in `coords`.
+    nearest : jnp.ndarray
+        Array where each pixel is the index of the nearest point in `coords`.
+    """
+
+    # Initialize intermediate and output arrays.
+    batch_size = len(coords)
+    labels = np.zeros((batch_size, *output_size), dtype=bool)
+    max_num_coords = np.max([len(coord) for coord in coords])
     if (coords_pad_length is None) or (coords_pad_length < max_num_coords):
         coords_pad_length = max_num_coords
-
     subpixel_coords = np.zeros((batch_size, coords_pad_length, 2))
     rounded_coords = np.zeros((batch_size, coords_pad_length, 2), dtype=int)
-    edt_indices = np.zeros((batch_size, 2) + shape, dtype=int)
+    edt_indices = np.zeros((batch_size, 2) + output_size, dtype=int)
 
-    for i, coords in enumerate(coords_list):
+    for i, coord in enumerate(coords):
 
-        coords = coords[(coords[:, 0] >= -0.5) & (coords[:, 0] <= shape[0] - 0.5) &
-                        (coords[:, 1] >= -0.5) & (coords[:, 1] <= shape[1] - 0.5)]
+        # Remove coordinates outside the output arrays.
+        coord = coord[(coord[:, 0] >= -0.5) & (coord[:, 0] <= output_size[0] - 0.5) &
+                      (coord[:, 1] >= -0.5) & (coord[:, 1] <= output_size[1] - 0.5)]
 
-        padding = ((0, coords_pad_length - len(coords)), (0, 0))
-        subpixel_coords[i] = np.pad(coords, padding, constant_values=-1)
-        unpadded_rounded_coords = np.rint(coords).astype(int)
+        # Pad coordinates to the same length.
+        padding = ((0, coords_pad_length - len(coord)), (0, 0))
+        subpixel_coords[i] = np.pad(coord, padding, constant_values=-1)
+
+        # Create labels array.
+        unpadded_rounded_coords = np.rint(coord).astype(int)
         labels[i][unpadded_rounded_coords[:, 0], unpadded_rounded_coords[:, 1]] = True
         rounded_coords[i] = np.pad(unpadded_rounded_coords, padding, constant_values=-1)
+
+        # Create Euclidean distance transform indices array.
         edt_indices[i] = ndimage.distance_transform_edt(~labels[i], return_distances=False, return_indices=True,
                                                         sampling=(dy, dx))
 
-    labels = jnp.expand_dims(labels, -1)
-    subpixel_coords = jnp.array(subpixel_coords)
-    rounded_coords = jnp.array(rounded_coords)
-    edt_indices = jnp.array(edt_indices)
-
+    # Prepare inputs for the vectorized distance transform function.
+    labels = np.expand_dims(labels, -1)
     inputs = [subpixel_coords, rounded_coords, edt_indices, dy, dx]
-    vmap_vmap_sdt = vmap(_vmap_sdt, in_axes=([0, 0, 0, None, None], None, None))
-    deltas, nearest = vmap_vmap_sdt(inputs, jnp.arange(shape[0]), jnp.arange(shape[1]))
+
+    # Apply the vectorized distance transform function.
+    deltas, nearest = vmap_sdt(inputs, np.arange(output_size[0]), np.arange(output_size[1]))
 
     return deltas, labels, nearest
 
 
-def _vmap_sdt(inputs, i, j):
-
-    return vmap(vmap(_sdt, in_axes=(None, None, 0)), in_axes=(None, 0, None))(inputs, i, j)
-
-
 @jit
-def _sdt(inputs, i, j):
+def _sdt(
+        inputs: Tuple[np.ndarray, np.ndarray, np.ndarray, float, float],
+        i: int,
+        j: int
+):
+
+    """Subpixel distance transform for a single pixel.
+
+    Parameters
+    ----------
+    inputs : Tuple[np.ndarray, np.ndarray, np.ndarray, float, float]
+        Tuple of inputs.
+    i : int
+        Pixel row index.
+    j : int
+        Pixel column index.
+
+    Returns
+    -------
+    delta : jnp.ndarray
+        Vector to the nearest point.
+    nearest : jnp.ndarray
+        Index of the nearest point.
+    """
 
     subpixel_coords, rounded_coords, edt_indices, dy, dx = inputs
     nearest = jnp.where(jnp.all(rounded_coords == edt_indices[:, i, j], axis=1)[:, None], subpixel_coords, 0)
@@ -220,3 +461,7 @@ def _sdt(inputs, i, j):
     delta = jnp.stack((delta_y, delta_x), axis=-1)
 
     return delta, nearest
+
+
+vmap_sdt = vmap(vmap(vmap(_sdt, in_axes=(None, None, 0)), in_axes=(None, 0, None)),
+                in_axes=([0, 0, 0, None, None], None, None))
