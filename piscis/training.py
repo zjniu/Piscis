@@ -309,8 +309,8 @@ def train_epoch(
 
         # Update the progress bar.
         summary = (
-            f"(train) loss: {epoch_metrics['loss']:>6.4f}, rmse: {epoch_metrics['rmse']:>6.4f}, "
-            f"bce: {epoch_metrics['bce']:>6.4f}, sf1: {epoch_metrics['sf1']:>6.4f}"
+            f"(train) loss: {epoch_metrics['loss']:> 6.4f}, rmse: {epoch_metrics['rmse']:> 6.4f}, "
+            f"bce: {epoch_metrics['bce']:> 6.4f}, sf1: {epoch_metrics['sf1']:> 6.4f}"
         )
         pbar.update(1)
         pbar.set_postfix_str(summary)
@@ -335,10 +335,10 @@ def train_epoch(
 
         # Update the progress bar.
         summary = (
-            f"(valid) loss: {val_epoch_metrics['val_loss']:>6.4f}, rmse: {val_epoch_metrics['val_rmse']:>6.4f}, "
-            f"bce: {val_epoch_metrics['val_bce']:>6.4f}, sf1: {val_epoch_metrics['val_sf1']:>6.4f} | "
-            f"(train) loss: {epoch_metrics['loss']:>6.4f}, rmse: {epoch_metrics['rmse']:>6.4f}, "
-            f"bce: {epoch_metrics['bce']:>6.4f}, sf1: {epoch_metrics['sf1']:>6.4f}"
+            f"(valid) loss: {val_epoch_metrics['val_loss']:> 6.4f}, rmse: {val_epoch_metrics['val_rmse']:> 6.4f}, "
+            f"bce: {val_epoch_metrics['val_bce']:> 6.4f}, sf1: {val_epoch_metrics['val_sf1']:> 6.4f} | "
+            f"(train) loss: {epoch_metrics['loss']:> 6.4f}, rmse: {epoch_metrics['rmse']:> 6.4f}, "
+            f"bce: {epoch_metrics['bce']:> 6.4f}, sf1: {epoch_metrics['sf1']:> 6.4f}"
         )
         pbar.set_postfix_str(summary)
 
