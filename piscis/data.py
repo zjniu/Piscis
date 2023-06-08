@@ -13,8 +13,8 @@ from piscis.transforms import batch_adjust, RandomAugment, subpixel_distance_tra
 
 def generate_dataset(
         path: str,
-        images: List,
-        coords: List,
+        images: List[np.ndarray],
+        coords: List[np.ndarray],
         key: jnp.ndarray,
         tile_size: Tuple[int, int] = (256, 256),
         min_spots: int = 1,
@@ -28,9 +28,9 @@ def generate_dataset(
     ----------
     path : str
         Path to save dataset.
-    images : List
+    images : List[np.ndarray]
         List of images.
-    coords : List
+    coords : List[np.ndarray]
         List of ground truth spot coordinates.
     key : jnp.ndarray
         Random key used for splitting the dataset into training, validation, and test sets.
