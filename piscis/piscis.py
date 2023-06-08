@@ -58,7 +58,7 @@ class Piscis:
         batch_size : int, optional
             Batch size for the CNN. Default is 4.
         input_size : Optional[Tuple[int, int]], optional
-            Input size for the CNN. If None, it is obtained from the model's variables. Default is None.
+            Input size for the CNN. If None, it is obtained from the model dictionary. Default is None.
         """
 
         # Set the batch size to 1 if running on CPU.
