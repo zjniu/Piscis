@@ -27,8 +27,8 @@ def main():
     predict_parser.add_argument('--stack', action='store_true', help="Whether the input is a stack of images.")
     predict_parser.add_argument('--scale', type=float, default=1.0, help="Scale factor for rescaling the input.")
     predict_parser.add_argument('--threshold', type=float, default=1.1,
-                                help="Spot detection threshold. Can be interpreted as the minimum number of fully"
-                                     "confident pixels necessary to identify a spot. Typical values fall between 1 and"
+                                help="Spot detection threshold. Can be interpreted as the minimum number of fully "
+                                     "confident pixels necessary to identify a spot. Typical values fall between 1 and "
                                      "2. Default is 1.1."
                                 )
     predict_parser.add_argument('--min-distance', type=int, default=1, help="Minimum distance between spots.")
@@ -39,7 +39,8 @@ def main():
     train_parser.add_argument('dataset_path', type=str,
                               help="Path to the directory containing training and validation datasets.")
     train_parser.add_argument('--adjustment', type=str, default='standardize',
-                              help="Adjustment type applied to images.")
+                              help="Adjustment type applied to images. Supported types are 'normalize' and "
+                                   "'standardize'.")
     train_parser.add_argument('--input-size', type=int, nargs=2, default=(256, 256),
                               help="Size of the input images used for training.")
     train_parser.add_argument('--random-seed', type=int, default=0,

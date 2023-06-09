@@ -94,7 +94,7 @@ def load_datasets(
     path : str
         Path to a dataset or directory of datasets.
     adjustment : str, optional
-        Adjustment type applied to images. Default is 'standardize'.
+        Adjustment type applied to images. Supported types are 'normalize' and 'standardize'. Default is 'standardize'.
     load_train : bool, optional
         Whether to load the training set. Default is True.
     load_valid : bool, optional

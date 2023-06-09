@@ -379,7 +379,7 @@ def train_model(
     dataset_path : str
         Path to the directory containing training and validation datasets.
     adjustment : Optional[str], optional
-        Adjustment type applied to images. Default is 'standardize'.
+        Adjustment type applied to images. Supported types are 'normalize' and 'standardize'. Default is 'standardize'.
     input_size : Tuple[int, int], optional
         Size of the input images used for training. Default is (256, 256).
     random_seed : int, optional

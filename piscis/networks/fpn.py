@@ -15,6 +15,24 @@ BatchConv = partial(Conv, layers=['bn', 'conv'], act=None)
 
 class BatchConvStyle(nn.Module):
 
+    """Convolutional block with batch norm, activation, and style transfer.
+
+    Attributes
+    ----------
+    features : int
+        Number of output features.
+    kernel_size : Sequence[int]
+        Size of the convolutional kernel.
+    conv : ModuleDef
+        Convolution module.
+    dense : ModuleDef
+        Dense module.
+    bn : ModuleDef
+        Batch norm module.
+    act : Callable
+        Activation function.
+    """
+
     features: int
     kernel_size: Sequence[int]
     conv: ModuleDef
@@ -51,6 +69,24 @@ class BatchConvStyle(nn.Module):
 
 
 class UpConv(nn.Module):
+
+    """Upsampling convolutional block.
+
+    Attributes
+    ----------
+    features : int
+        Number of output features.
+    kernel_size : Sequence[int]
+        Size of the convolutional kernel.
+    conv : ModuleDef
+        Convolution module.
+    dense : ModuleDef
+        Dense module.
+    bn : ModuleDef
+        Batch norm module.
+    act : Callable
+        Activation function.
+    """
 
     features: int
     kernel_size: Sequence[int]
@@ -99,6 +135,8 @@ class UpConv(nn.Module):
 
 class MakeStyle(nn.Module):
 
+    """Style transfer module."""
+
     @nn.compact
     def __call__(self, x):
 
@@ -109,6 +147,24 @@ class MakeStyle(nn.Module):
 
 
 class Decoder(nn.Module):
+
+    """Decoder module.
+
+    Attributes
+    ----------
+    kernel_size : Sequence[int]
+        Size of the convolutional kernel.
+    aggregate : str
+        Aggregation mode for feature maps.
+    conv : ModuleDef
+        Convolution module.
+    dense : ModuleDef
+        Dense module.
+    bn : ModuleDef
+        Batch norm module.
+    act : Callable
+        Activation function.
+    """
 
     kernel_size: Sequence[int]
     aggregate: str
