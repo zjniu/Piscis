@@ -2,22 +2,40 @@ import jax.numpy as jnp
 
 from flax import linen as nn
 from functools import partial
-from typing import Any, Callable, Sequence, Union
+from typing import Any, Callable, Optional, Sequence
 
 ModuleDef = Any
 
 
 class Conv(nn.Module):
 
+    """Convolutional block with batch norm and activation.
+
+    Attributes
+    ----------
+    features : int
+        Number of output features.
+    kernel_size : Sequence[int]
+        Size of the convolutional kernel.
+    conv : Optional[ModuleDef]
+        Convolution module.
+    bn : Optional[ModuleDef]
+        Batch norm module.
+    act : Optional[Callable]
+        Activation function.
+    layers : Sequence[str]
+        Sequence of layers to apply.
+    """
+
     features: int
     kernel_size: Sequence[int]
-    conv: ModuleDef
-    bn: ModuleDef
-    act: Union[None, Callable]
+    conv: Optional[ModuleDef]
+    bn: Optional[ModuleDef]
+    act: Optional[Callable]
     layers: Sequence[str]
 
     @nn.compact
-    def __call__(self, x):
+    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
 
         conv = partial(
             self.conv,
@@ -44,6 +62,32 @@ class Conv(nn.Module):
 
 class MBConv(nn.Module):
 
+    """Mobile inverted bottleneck convolutional block.
+
+    Attributes
+    ----------
+    features_in : int
+        Number of input features.
+    features_out : int
+        Number of output features.
+    expand_ratio : int
+        Expansion ratio.
+    kernel_size : Sequence[int]
+        Size of the convolutional kernel.
+    strides : int
+        Stride of the convolution.
+    se_ratio : float
+        Squeeze and excitation ratio.
+    conv : ModuleDef
+        Convolution module.
+    dropout : Optional[ModuleDef]
+        Dropout module.
+    bn : ModuleDef
+        Batch norm module.
+    act : Callable
+        Activation function.
+    """
+
     features_in: int
     features_out: int
     expand_ratio: int
@@ -51,12 +95,12 @@ class MBConv(nn.Module):
     strides: int
     se_ratio: float
     conv: ModuleDef
-    dropout: Union[None, ModuleDef]
+    dropout: Optional[ModuleDef]
     bn: ModuleDef
     act: Callable
 
     @nn.compact
-    def __call__(self, x):
+    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
 
         conv = partial(
             self.conv,
@@ -74,7 +118,7 @@ class MBConv(nn.Module):
 
         inputs = x
 
-        # Expansion phase
+        # Expansion phase.
         filters = self.features_in * self.expand_ratio
         if self.expand_ratio != 1:
 
@@ -88,7 +132,7 @@ class MBConv(nn.Module):
             )(x)
             x = self.act(x)
 
-        # Depthwise conv
+        # Depthwise convolution.
         x = conv(
             features=x.shape[-1],
             feature_group_count=x.shape[-1],
@@ -100,7 +144,7 @@ class MBConv(nn.Module):
         )(x)
         x = self.act(x)
 
-        # Squeeze and excite
+        # Squeeze and excite.
         if 0 < self.se_ratio <= 1:
 
             filters_se = max(1, int(self.features_in * self.se_ratio))
@@ -121,7 +165,7 @@ class MBConv(nn.Module):
 
             x = x * se
 
-        # Output phase
+        # Output phase.
         x = proj(
             features=self.features_out,
             use_bias=False,
@@ -131,7 +175,7 @@ class MBConv(nn.Module):
             name='project_bn'
         )(x)
 
-        # Residual
+        # Residual.
         if (self.strides == 1) and (self.features_in == self.features_out):
 
             if self.dropout is not None:
@@ -145,6 +189,32 @@ class MBConv(nn.Module):
 
 class FusedMBConv(nn.Module):
 
+    """Fused mobile inverted bottleneck convolutional block.
+
+    Attributes
+    ----------
+    features_in : int
+        Number of input features.
+    features_out : int
+        Number of output features.
+    expand_ratio : int
+        Expansion ratio.
+    kernel_size : Sequence[int]
+        Size of the convolutional kernel.
+    strides : int
+        Stride of the convolution.
+    se_ratio : float
+        Squeeze and excitation ratio.
+    conv : ModuleDef
+        Convolution module.
+    dropout : Optional[ModuleDef]
+        Dropout module.
+    bn : ModuleDef
+        Batch norm module.
+    act : Callable
+        Activation function.
+    """
+
     features_in: int
     features_out: int
     expand_ratio: int
@@ -152,12 +222,12 @@ class FusedMBConv(nn.Module):
     strides: int
     se_ratio: float
     conv: ModuleDef
-    dropout: Union[None, ModuleDef]
+    dropout: Optional[ModuleDef]
     bn: ModuleDef
     act: Callable
 
     @nn.compact
-    def __call__(self, x):
+    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
 
         conv = partial(
             self.conv,
@@ -175,7 +245,7 @@ class FusedMBConv(nn.Module):
 
         inputs = x
 
-        # Expansion phase
+        # Expansion phase.
         filters = self.features_in * self.expand_ratio
         if self.expand_ratio != 1:
 
@@ -189,7 +259,7 @@ class FusedMBConv(nn.Module):
             )(x)
             x = self.act(x)
 
-        # Squeeze and excite
+        # Squeeze and excite.
         if 0 < self.se_ratio <= 1:
 
             filters_se = max(1, int(self.features_in * self.se_ratio))
@@ -210,7 +280,7 @@ class FusedMBConv(nn.Module):
 
             x = x * se
 
-        # Output phase
+        # Output phase.
         if self.expand_ratio == 1:
             x = conv(
                 features=self.features_out,
@@ -229,7 +299,7 @@ class FusedMBConv(nn.Module):
         if self.expand_ratio == 1:
             x = self.act(x)
 
-        # Residual
+        # Residual.
         if (self.strides == 1) and (self.features_in == self.features_out):
 
             if self.dropout is not None:

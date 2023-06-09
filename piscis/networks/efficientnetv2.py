@@ -1,9 +1,10 @@
 import copy
+import jax.numpy as jnp
 import math
 
 from flax import linen as nn
 from functools import partial
-from typing import Any, Callable, Sequence, Union
+from typing import Any, Callable, Dict, Optional, Sequence, Union
 
 from piscis.networks.conv import MBConv, FusedMBConv
 from piscis.networks.efficientnetv2_defaults import DEFAULT_BLOCKS_ARGS
@@ -11,9 +12,31 @@ from piscis.networks.efficientnetv2_defaults import DEFAULT_BLOCKS_ARGS
 ModuleDef = Any
 
 
-def round_features(features, width_coefficient, min_depth, depth_divisor):
+def round_features(
+        features: int,
+        width_coefficient: float,
+        min_depth: int,
+        depth_divisor: int
+) -> int:
 
-    """Round number of features based on depth multiplier."""
+    """Round the number of features based on the depth multiplier.
+
+    Parameters
+    ----------
+    features : int
+        Number of features.
+    width_coefficient : float
+        Scaling coefficient for network width.
+    min_depth : int
+        Minimum number of filters.
+    depth_divisor : int
+        Unit of network width.
+
+    Returns
+    -------
+    new_features : int
+        Rounded number of features.
+    """
 
     features *= width_coefficient
     minimum_depth = min_depth or depth_divisor
@@ -21,21 +44,62 @@ def round_features(features, width_coefficient, min_depth, depth_divisor):
         minimum_depth,
         int(features + depth_divisor / 2) // depth_divisor * depth_divisor,
     )
+    new_features = int(new_features)
 
-    return int(new_features)
+    return new_features
 
 
-def round_repeats(repeats, depth_coefficient):
+def round_repeats(
+        repeats: int,
+        depth_coefficient: float
+) -> int:
 
-    """Round number of repeats based on depth multiplier."""
+    """Round number of repeats based on depth multiplier.
 
-    return int(math.ceil(depth_coefficient * repeats))
+    Parameters
+    ----------
+    repeats : int
+        Number of repeats.
+    depth_coefficient : float
+        Scaling coefficient for network depth.
+
+    Returns
+    -------
+    new_repeats : int
+        Rounded number of repeats.
+    """
+
+    new_repeats = int(math.ceil(depth_coefficient * repeats))
+
+    return new_repeats
 
 
 class EfficientNetV2(nn.Module):
 
+    """EfficientNetV2 architecture.
+
+    Attributes
+    ----------
+    stem_strides : int
+        Strides of the stem convolution.
+    blocks_args : Sequence
+        List of arguments to construct block modules.
+    dropout_rate : float
+        Dropout rate at skip connections.
+    bn_momentum : float
+        Momentum parameter for batch norm layers.
+    conv : ModuleDef
+        Convolution module.
+    dropout : ModuleDef
+        Dropout module.
+    bn : ModuleDef
+        Batch norm module.
+    act : Callable
+        Activation function.
+    """
+
     stem_strides: int
-    blocks_args: list
+    blocks_args: Sequence
     dropout_rate: float
     bn_momentum: float
     conv: ModuleDef = nn.Conv
@@ -44,8 +108,14 @@ class EfficientNetV2(nn.Module):
     act: Callable = nn.swish
 
     @nn.compact
-    def __call__(self, x, train: bool = True, capture_list: Union[None, Sequence] = None):
+    def __call__(
+            self,
+            x: jnp.ndarray,
+            train: bool = True,
+            capture_list: Optional[Sequence[int]] = None
+    ) -> Union[jnp.ndarray, Dict[int, jnp.ndarray]]:
 
+        # Initialize capture list.
         captures = {}
 
         bn = partial(
@@ -54,7 +124,7 @@ class EfficientNetV2(nn.Module):
             momentum=self.bn_momentum
         )
 
-        # Build stem
+        # Build stem.
         x = self.conv(
             features=self.blocks_args[0][0]['features_in'],
             kernel_size=(3, 3),
@@ -68,7 +138,7 @@ class EfficientNetV2(nn.Module):
         )(x)
         x = self.act(x)
 
-        # Build blocks
+        # Build blocks.
         blocks_args = copy.deepcopy(self.blocks_args)
         b = 0
         blocks = float(sum(len(block_args) for block_args in blocks_args))
@@ -76,7 +146,7 @@ class EfficientNetV2(nn.Module):
         for i, block_args in enumerate(blocks_args):
 
             for args in block_args:
-                # Determine which conv type to use:
+
                 args = args.unfreeze()
                 block = {0: MBConv, 1: FusedMBConv}[args.pop('conv_type')]
 
@@ -104,6 +174,7 @@ class EfficientNetV2(nn.Module):
                 )(x)
                 b += 1
 
+            # Capture intermediate output if necessary.
             if (capture_list is not None) and (i in capture_list):
                 captures[i] = x
 
@@ -116,20 +187,57 @@ class EfficientNetV2(nn.Module):
 
 
 def build_efficientnetv2(
-    blocks_args: Sequence,
-    model_name: str,
-    width_coefficient: float,
-    depth_coefficient: float,
-    stem_strides: int = 2,
-    dropout_rate: float = 0.2,
-    bn_momentum: float = 0.9,
-    depth_divisor: int = 8,
-    min_depth: int = 8,
-    conv: ModuleDef = nn.Conv,
-    dropout: ModuleDef = nn.Dropout,
-    bn: ModuleDef = nn.BatchNorm,
-    act: Callable = nn.swish
-):
+        blocks_args: Sequence[Dict[str, Any]],
+        model_name: str,
+        width_coefficient: float,
+        depth_coefficient: float,
+        stem_strides: int = 2,
+        dropout_rate: float = 0.2,
+        bn_momentum: float = 0.9,
+        depth_divisor: int = 8,
+        min_depth: int = 8,
+        conv: ModuleDef = nn.Conv,
+        dropout: ModuleDef = nn.Dropout,
+        bn: ModuleDef = nn.BatchNorm,
+        act: Callable = nn.swish
+) -> partial:
+
+    """Build EfficientNetV2 architecture.
+
+    Parameters
+    ----------
+    blocks_args : Sequence[Dict[str, Any]]
+        List of dictionaries of arguments to construct block modules.
+    model_name : str
+        Model name.
+    width_coefficient : float
+        Scaling coefficient for network width.
+    depth_coefficient : float
+        Scaling coefficient for network depth.
+    stem_strides : int, optional
+        Strides of the stem convolution. Default is 2.
+    dropout_rate : float, optional
+        Dropout rate at skip connections. Default is 0.2.
+    bn_momentum : float, optional
+        Momentum parameter for batch norm layers. Default is 0.9.
+    depth_divisor : int, optional
+        Unit of network width. Default is 8.
+    min_depth : int, optional
+        Minimum number of filters. Default is 8.
+    conv : ModuleDef, optional
+        Convolution module. Default is nn.Conv.
+    dropout : ModuleDef, optional
+        Dropout module. Default is nn.Dropout.
+    bn : ModuleDef, optional
+        Batch norm module. Default is nn.BatchNorm.
+    act : Callable, optional
+        Activation function. Default is nn.swish.
+
+    Returns
+    -------
+    model : partial
+        EfficientNetV2 architecture.
+    """
 
     blocks_args = copy.deepcopy(blocks_args)
 
@@ -161,7 +269,7 @@ def build_efficientnetv2(
         )
         for j in range(repeats):
 
-            # The first block needs to take care of stride and filter size increase.
+            # The first block needs to take care of stride and filter size increases.
             if j > 0:
                 block_args['pool'] = None
                 block_args['strides'] = 1
