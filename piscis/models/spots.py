@@ -1,4 +1,7 @@
+import jax.numpy as jnp
+
 from flax import linen as nn
+from typing import Tuple, Union
 
 from piscis.networks.efficientnetv2 import build_efficientnetv2
 from piscis.networks.fpn import FPN
@@ -59,11 +62,26 @@ EfficientNetV2XS = build_efficientnetv2(
 
 class SpotsModel(nn.Module):
 
+    """Spot detection model.
+
+    Attributes
+    ----------
+    style : bool
+        Whether to use style transfer.
+    aggregate : str
+        Aggregation mode for the feature pyramid network. Supported modes are 'sum' and 'concatenate'.
+    """
+
     style: bool = True
     aggregate: str = 'sum'
 
     @nn.compact
-    def __call__(self, x, train: bool = True):
+    def __call__(
+            self,
+            x: jnp.ndarray,
+            train: bool = True,
+            return_style: bool = False
+    ) -> Union[Tuple[jnp.ndarray, jnp.ndarray], Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]]:
 
         x, style = FPN(
             encoder=EfficientNetV2XS,
@@ -75,4 +93,7 @@ class SpotsModel(nn.Module):
         deltas = x[:, :, :, :2]
         labels = nn.sigmoid(x[:, :, :, 2:3])
 
-        return deltas, labels
+        if return_style:
+            return deltas, labels, style
+        else:
+            return deltas, labels
