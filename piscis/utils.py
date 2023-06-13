@@ -460,7 +460,7 @@ def snap_coords(
 
     # Pad the image.
     delta = round((window_size - 1) / 2)
-    image = np.pad(image, ((delta, delta), (delta, delta)), mode='reflect')
+    image = np.pad(image, ((delta, delta), (delta, delta)))
 
     for coord in coords:
 
