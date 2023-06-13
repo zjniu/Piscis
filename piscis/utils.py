@@ -3,6 +3,8 @@ import numpy as np
 
 from jax import vmap
 from jax.lax import dynamic_slice, scan
+from numba import njit
+from scipy import optimize
 from skimage import feature, measure
 from typing import Dict, List, Sequence, Tuple
 
@@ -415,3 +417,183 @@ def _match_coords(
     checked.append(i)
 
     return matches
+
+
+def snap_coords(
+        coords: np.ndarray,
+        image: np.ndarray,
+        window_size: int = 3
+) -> np.ndarray:
+
+    """Snap each coordinate to the local maxima of an image in a window around the coordinate.
+
+    Parameters
+    ----------
+    coords : np.ndarray
+        Coordinates.
+    image : np.ndarray
+        Image.
+    window_size : int, optional
+        Window size. Must be an odd integer. Default is 3.
+
+    Returns
+    -------
+    snapped_coords : np.ndarray
+        Snapped coordinates.
+
+    Raises
+    ------
+    ValueError
+        If `window_size` is not an odd integer.
+    """
+
+    # Check the window size.
+    if window_size % 2 == 0:
+        raise ValueError('window_size must be an odd integer.')
+
+    # Remove coordinates outside the image.
+    coords = coords[(coords[:, 0] > -0.5) & (coords[:, 1] > -0.5) &
+                    (coords[:, 0] < image.shape[0] - 0.5) & (coords[:, 1] < image.shape[1] - 0.5)]
+
+    # Create a list to store the snapped coordinates.
+    snapped_coords = []
+
+    # Pad the image.
+    delta = round((window_size - 1) / 2)
+    image = np.pad(image, ((delta, delta), (delta, delta)), mode='reflect')
+
+    for coord in coords:
+
+        # Crop the image around the coordinate.
+        index = np.rint(coord).astype(int)
+        cropped_image = image[index[0]: index[0] + window_size, index[1]: index[1] + window_size]
+
+        # Find the local maximum.
+        maximum = np.where(cropped_image == np.max(cropped_image))
+        maximum = np.array([maximum[0][0], maximum[1][0]])
+
+        # Snap the coordinate to the local maximum.
+        offset = maximum - delta
+        snapped_coords.append(index + offset)
+
+    snapped_coords = np.array(snapped_coords)
+
+    return snapped_coords
+
+
+def fit_coords(
+        coords: np.ndarray,
+        image: np.ndarray,
+        window_size: int = 3
+) -> np.ndarray:
+
+    """Fit a Gaussian to the image in a window around each coordinate and return the center of the Gaussian.
+
+    Parameters
+    ----------
+    coords : np.ndarray
+        Coordinates.
+    image : np.ndarray
+        Image.
+    window_size : int, optional
+        Window size. Must be an odd integer. Default is 3.
+
+    Returns
+    -------
+    fitted_coords : np.ndarray
+        Fitted coordinates.
+
+    Raises
+    ------
+    ValueError
+        If `window_size` is not an odd integer.
+    """
+
+    # Check the window size.
+    if window_size % 2 == 0:
+        raise ValueError('window_size must be an odd integer.')
+
+    # Remove coordinates outside the image.
+    coords = coords[(coords[:, 0] > -0.5) & (coords[:, 1] > -0.5) &
+                    (coords[:, 0] < image.shape[0] - 0.5) & (coords[:, 1] < image.shape[1] - 0.5)]
+
+    # Create a list to store the fitted coordinates.
+    fitted_coords = []
+
+    # Pad the image.
+    delta = round((window_size - 1) / 2)
+    image = np.pad(image, ((delta, delta), (delta, delta)), mode='reflect')
+
+    # Create a meshgrid for the Gaussian fit.
+    x = np.arange(-delta, delta + 1)
+    x, y = np.meshgrid(x, x)
+
+    for coord in coords:
+
+        # Crop the image around the coordinate.
+        index = np.rint(coord).astype(int)
+        cropped_image = image[index[0]: index[0] + window_size, index[1]: index[1] + window_size]
+
+        # Fit a Gaussian to the cropped image.
+        try:
+            popt, pcov = optimize.curve_fit(_gaussian, (x, y), cropped_image.ravel(),
+                                            p0=(np.max(cropped_image), 0, 0, 1, 1, 0, np.min(cropped_image)),
+                                            bounds=((np.max(cropped_image) / 2, -delta, -delta, 0, 0, 0, 0),
+                                                    (2 * np.max(cropped_image), delta, delta, np.inf, np.inf,
+                                                     2 * np.pi, np.inf)))
+            fitted_coords.append(index + np.array([popt[2], popt[1]]))
+        except RuntimeError:
+            pass
+
+    fitted_coords = np.array(fitted_coords)
+
+    return fitted_coords
+
+
+@njit
+def _gaussian(
+        xy: Tuple[np.ndarray, np.ndarray],
+        amplitude: float,
+        x0: float,
+        y0: float,
+        sigma_x: float,
+        sigma_y: float,
+        theta: float,
+        offset: float
+) -> np.ndarray:
+
+    """2D Gaussian function.
+
+    Parameters
+    ----------
+    xy : Tuple[np.ndarray, np.ndarray]
+        x and y values at which to evaluate the Gaussian.
+    amplitude : float
+        Amplitude of the Gaussian.
+    x0 : float
+        x-coordinate of the center of the Gaussian.
+    y0 : float
+        y-coordinate of the center of the Gaussian.
+    sigma_x : float
+        Standard deviation of the Gaussian in the x-direction.
+    sigma_y : float
+        Standard deviation of the Gaussian in the y-direction.
+    theta : float
+        Rotation angle of the Gaussian.
+    offset : float
+        Offset of the Gaussian in the z-direction.
+
+    Returns
+    -------
+    g : np.ndarray
+        Gaussian at the given x and y values.
+    """
+
+    x, y = xy
+    a = (np.cos(theta) ** 2) / (2 * sigma_x ** 2) + (np.sin(theta) ** 2) / (2 * sigma_y ** 2)
+    b = -(np.sin(2 * theta)) / (4 * sigma_x ** 2) + (np.sin(2 * theta))/(4 * sigma_y ** 2)
+    c = (np.sin(theta) ** 2)/(2 * sigma_x ** 2) + (np.cos(theta) ** 2)/(2 * sigma_y ** 2)
+    g = offset + amplitude * np.exp(-(a * ((x - x0) ** 2) + 2 * b * (x - x0) * (y - y0) + c * ((y - y0) ** 2)))
+    g = g.ravel()
+
+    return g
