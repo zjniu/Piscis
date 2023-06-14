@@ -484,7 +484,8 @@ def snap_coords(
 def fit_coords(
         coords: np.ndarray,
         image: np.ndarray,
-        window_size: int = 3
+        window_size: int = 3,
+        max_gaussian_amplitude: float = 2.0
 ) -> np.ndarray:
 
     """Fit a Gaussian to the image in a window around each coordinate and return the center of the Gaussian.
@@ -497,6 +498,8 @@ def fit_coords(
         Image.
     window_size : int, optional
         Window size. Must be an odd integer. Default is 3.
+    max_gaussian_amplitude : float, optional
+        Maximum amplitude of the Gaussian used to fit the normalized image within a window. Default is 2.0.
 
     Returns
     -------
@@ -528,22 +531,28 @@ def fit_coords(
     x = np.arange(-delta, delta + 1)
     x, y = np.meshgrid(x, x)
 
+    # Define initial parameters and bounds for the Gaussian fit.
+    p0 = (1, 0, 0, 1, 1, 0, 0)
+    bounds = ((0, -delta, -delta, 0, 0, -np.pi, 0),
+              (max_gaussian_amplitude, delta, delta, np.inf, np.inf, np.pi, max_gaussian_amplitude))
+
     for coord in coords:
 
         # Crop the image around the coordinate.
         index = np.rint(coord).astype(int)
-        cropped_image = image[index[0]: index[0] + window_size, index[1]: index[1] + window_size]
+        cropped_image = image[index[0]: index[0] + window_size, index[1]: index[1] + window_size].ravel()
+
+        # Normalize the cropped image.
+        image_min = np.min(cropped_image)
+        image_max = np.max(cropped_image)
+        cropped_image = (cropped_image - image_min) / (image_max - image_min + 1e-7)
 
         # Fit a Gaussian to the cropped image.
         try:
-            popt, pcov = optimize.curve_fit(_gaussian, (x, y), cropped_image.ravel(),
-                                            p0=(np.max(cropped_image), 0, 0, 1, 1, 0, np.min(cropped_image)),
-                                            bounds=((np.max(cropped_image) / 2, -delta, -delta, 0, 0, 0, 0),
-                                                    (2 * np.max(cropped_image), delta, delta, np.inf, np.inf,
-                                                     2 * np.pi, np.inf)))
+            popt, pcov = optimize.curve_fit(_gaussian, (x, y), cropped_image, p0=p0, bounds=bounds)
             fitted_coords.append(index + np.array([popt[2], popt[1]]))
         except RuntimeError:
-            pass
+            fitted_coords.append(coord)
 
     fitted_coords = np.array(fitted_coords)
 
