@@ -485,7 +485,8 @@ def fit_coords(
         coords: np.ndarray,
         image: np.ndarray,
         window_size: int = 3,
-        max_gaussian_amplitude: float = 2.0
+        max_gaussian_amplitude: float = 2.0,
+        keep_failed_fits: bool = False
 ) -> np.ndarray:
 
     """Fit a Gaussian to the image in a window around each coordinate and return the center of the Gaussian.
@@ -500,6 +501,8 @@ def fit_coords(
         Window size. Must be an odd integer. Default is 3.
     max_gaussian_amplitude : float, optional
         Maximum amplitude of the Gaussian used to fit the normalized image within a window. Default is 2.0.
+    keep_failed_fits : bool, optional
+        Whether to keep the original coordinates when the Gaussian fit fails. Default is False.
 
     Returns
     -------
@@ -532,7 +535,7 @@ def fit_coords(
     x, y = np.meshgrid(x, x)
 
     # Define initial parameters and bounds for the Gaussian fit.
-    p0 = (1, 0, 0, 1, 1, 0, 0)
+    p0 = (1, 0, 0, delta, delta, 0, 0)
     bounds = ((0, -delta, -delta, 0, 0, -np.pi, 0),
               (max_gaussian_amplitude, delta, delta, np.inf, np.inf, np.pi, max_gaussian_amplitude))
 
@@ -552,7 +555,8 @@ def fit_coords(
             popt, pcov = optimize.curve_fit(_gaussian, (x, y), cropped_image, p0=p0, bounds=bounds)
             fitted_coords.append(index + np.array([popt[2], popt[1]]))
         except RuntimeError:
-            fitted_coords.append(coord)
+            if keep_failed_fits:
+                fitted_coords.append(coord)
 
     fitted_coords = np.array(fitted_coords)
 
