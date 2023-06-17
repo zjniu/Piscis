@@ -360,9 +360,9 @@ class Piscis:
         ndim = x.ndim
 
         # Check the number of dimensions.
-        if (ndim == 4) or ((ndim == 3) and (not stack)):
+        if ((ndim == 4) and stack) or ((ndim == 3) and (not stack)):
             batch_axis = True
-        elif (ndim == 2) or ((ndim == 3) and stack):
+        elif ((ndim == 2) and (not stack)) or ((ndim == 3) and stack):
             batch_axis = False
         else:
             raise ValueError("Input does not have the correct dimensions.")
