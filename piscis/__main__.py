@@ -22,7 +22,7 @@ def main():
                                            help="Predict spots using a trained SpotsModel.")
     predict_parser.add_argument('input_path', type=str, help="Path to image or stack of images.")
     predict_parser.add_argument('output_path', type=str, help="Path to save predicted spots as CSV.")
-    predict_parser.add_argument('--model-name', type=str, default='05292023', help="Model name.")
+    predict_parser.add_argument('--model-name', type=str, default='06162023', help="Model name.")
     predict_parser.add_argument('--batch-size', type=int, default=4, help="Batch size for the CNN.")
     predict_parser.add_argument('--stack', action='store_true', help="Whether the input is a stack of images.")
     predict_parser.add_argument('--scale', type=float, default=1.0, help="Scale factor for rescaling the input.")
