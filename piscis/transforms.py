@@ -223,7 +223,7 @@ class RandomAugment:
 
 def batch_adjust(
         images: Sequence[np.ndarray],
-        adjustment: str,
+        adjustment: Optional[str],
         **kwargs: Any
 ) -> Sequence[np.ndarray]:
 
@@ -233,7 +233,7 @@ def batch_adjust(
     ----------
     images : Sequence[np.ndarray]
         Images to adjust.
-    adjustment : str
+    adjustment : Optional[str]
         Adjustment type. Supported types are 'normalize' and 'standardize'.
     **kwargs : Any
         Keyword arguments for the adjustment function.
@@ -257,7 +257,7 @@ def batch_adjust(
 
 def adjust(
         image: np.ndarray,
-        adjustment: str,
+        adjustment: Optional[str],
         **kwargs: Any
 ) -> np.ndarray:
 
@@ -267,7 +267,7 @@ def adjust(
     ----------
     image : np.ndarray
         Image to adjust.
-    adjustment : str
+    adjustment : Optional[str]
         Adjustment type. Supported types are 'normalize' and 'standardize'.
     **kwargs : Any
         Keyword arguments for the adjustment function.

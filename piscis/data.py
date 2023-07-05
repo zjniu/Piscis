@@ -83,7 +83,7 @@ def generate_dataset(
 
 def load_datasets(
         path: str,
-        adjustment: str = 'standardize',
+        adjustment: Optional[str] = 'standardize',
         load_train: bool = True,
         load_valid: bool = True,
         load_test: bool = True
@@ -95,7 +95,7 @@ def load_datasets(
     ----------
     path : str
         Path to a dataset or directory of datasets.
-    adjustment : str, optional
+    adjustment : Optional[str], optional
         Adjustment type applied to images. Supported types are 'normalize' and 'standardize'. Default is 'standardize'.
     load_train : bool, optional
         Whether to load the training set. Default is True.
