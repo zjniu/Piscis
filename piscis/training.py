@@ -414,7 +414,7 @@ def train_model(
     model_path = Path(model_path)
     model_parent_path = model_path.parent
     model_name = model_path.stem
-    checkpoint_path = model_parent_path.joinpath(f'{model_name}_ckpts')
+    checkpoint_path = model_parent_path / f'{model_name}_ckpts'
     checkpoint_path.mkdir(parents=True, exist_ok=True)
 
     # Load datasets.

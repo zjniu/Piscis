@@ -17,7 +17,7 @@ from typing import Dict, Optional, Tuple, Union
 from piscis.models.spots import SpotsModel
 from piscis import utils
 
-TRAINED_MODELS_DIR = Path(__file__).parent.joinpath('trained_models')
+TRAINED_MODELS_DIR = Path(__file__).parent / 'trained_models'
 
 
 class Piscis:
@@ -69,7 +69,7 @@ class Piscis:
         self.model_name = model_name
         self.batch_size = batch_size
         self.model = SpotsModel()
-        with open(TRAINED_MODELS_DIR.joinpath(model_name), 'rb') as f_model:
+        with open(TRAINED_MODELS_DIR / model_name, 'rb') as f_model:
             model_dict = serialization.from_bytes(target=None, encoded_bytes=f_model.read())
             self.variables = model_dict['variables']
             self.adjustment = model_dict['adjustment']
