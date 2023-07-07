@@ -462,7 +462,7 @@ def train_model(
     if (next(checkpoint_path.iterdir(), None) is None) and model_path.is_file():
         print(f'Loading existing model weights from {model_path}...')
         with open(model_path, 'rb') as f_model:
-            variables = serialization.from_bytes(target=None, encoded_bytes=f_model.read())
+            variables = serialization.from_bytes(target=None, encoded_bytes=f_model.read())['variables']
     else:
         variables = None
 
