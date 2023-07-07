@@ -9,7 +9,6 @@ from flax.core import frozen_dict
 from flax.training import orbax_utils, train_state
 from functools import partial
 from jax import jit, random, value_and_grad
-from pathlib import Path
 from tqdm.auto import tqdm
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -17,6 +16,7 @@ from piscis.data import load_datasets, transform_batch, transform_subdataset
 from piscis.losses import spots_loss
 from piscis.models.spots import SpotsModel
 from piscis.optimizers import sgdw
+from piscis.paths import CHECKPOINTS_DIR, MODELS_DIR
 
 
 class TrainState(train_state.TrainState, ABC):
@@ -355,7 +355,7 @@ def train_epoch(
 
 
 def train_model(
-        model_path: str,
+        model_name: str,
         dataset_path: str,
         adjustment: Optional[str] = 'standardize',
         input_size: Tuple[int, int] = (256, 256),
@@ -374,8 +374,8 @@ def train_model(
 
     Parameters
     ----------
-    model_path : str
-        Path to a new or existing model.
+    model_name: str
+        Name of a new or existing model.
     dataset_path : str
         Path to the directory containing training and validation datasets.
     adjustment : Optional[str], optional
@@ -410,13 +410,6 @@ def train_model(
     if warmup_epochs + decay_epochs > epochs:
         raise ValueError('warmup_epochs + decay_epochs cannot be greater than epochs.')
 
-    # Create directories for storing checkpoints, batch metrics, and epoch metrics.
-    model_path = Path(model_path)
-    model_parent_path = model_path.parent
-    model_name = model_path.stem
-    checkpoint_path = model_parent_path / f'{model_name}_ckpts'
-    checkpoint_path.mkdir(parents=True, exist_ok=True)
-
     # Load datasets.
     print('Loading datasets...')
     dataset = load_datasets(dataset_path, adjustment, load_train=True, load_valid=True, load_test=False)
@@ -445,6 +438,10 @@ def train_model(
             'sf1': 1.0
         }
 
+    # Define directories for storing checkpoints and the model.
+    checkpoint_path = CHECKPOINTS_DIR / model_name
+    model_path = MODELS_DIR / model_name
+
     # Create a checkpoint manager.
     mgr_options = orbax.checkpoint.CheckpointManagerOptions(max_to_keep=2)
     checkpointers = {
@@ -452,6 +449,7 @@ def train_model(
         'batch_metrics_log': orbax.checkpoint.Checkpointer(orbax.checkpoint.JsonCheckpointHandler()),
         'epoch_metrics_log': orbax.checkpoint.Checkpointer(orbax.checkpoint.JsonCheckpointHandler())
     }
+    checkpoint_path.mkdir(parents=True, exist_ok=True)
     ckpt_mgr = orbax.checkpoint.CheckpointManager(
         directory=checkpoint_path,
         checkpointers=checkpointers,
@@ -516,5 +514,6 @@ def train_model(
         'input_size': input_size
     }
     bytes_model = serialization.to_bytes(model_dict)
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
     with open(model_path, 'wb') as f_model:
         f_model.write(bytes_model)

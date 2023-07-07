@@ -35,7 +35,7 @@ def main():
 
     # Train subparser.
     train_parser = subparsers.add_parser('train', formatter_class=formatter_class, help="Train a SpotsModel")
-    train_parser.add_argument('model_path', type=str, help="Path to a new or existing model.")
+    train_parser.add_argument('model_name', type=str, help="Name of a new or existing model.")
     train_parser.add_argument('dataset_path', type=str,
                               help="Path to the directory containing training and validation datasets.")
     train_parser.add_argument('--adjustment', type=str, default='standardize',
@@ -68,7 +68,7 @@ def main():
 
         # Train the model.
         train_model(
-            model_path=args.model_path,
+            model_name=args.model_name,
             dataset_path=args.dataset_path,
             adjustment=args.adjustment,
             input_size=args.input_size,
