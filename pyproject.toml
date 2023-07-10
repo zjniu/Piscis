@@ -20,6 +20,7 @@ classifiers = [
 dependencies = [
     "deeptile",
     "flax",
+    'huggingface-hub',
     "imageio",
     "numpy",
     "opencv-python",

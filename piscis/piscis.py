@@ -2,7 +2,6 @@ import dask.array as da
 import deeptile
 import jax.numpy as jnp
 import numpy as np
-import requests
 
 from deeptile import lift, Output
 from deeptile.core.data import Tiled
@@ -15,12 +14,9 @@ from skimage.transform import resize
 from typing import Dict, Optional, Tuple, Union
 
 from piscis import utils
+from piscis.downloads import download_pretrained_model
 from piscis.models.spots import SpotsModel
 from piscis.paths import MODELS_DIR
-
-PRETRAINED_MODELS = {
-    '06162023': 'https://www.dropbox.com/scl/fi/0ylis3q6lfudkzptq2rzr/06162023?rlkey=cl8at235r13symdqp7m9yqfkq&dl=1'
-}
 
 
 class Piscis:
@@ -72,16 +68,10 @@ class Piscis:
         self.model_name = model_name
         self.batch_size = batch_size
         self.model = SpotsModel()
-
         MODELS_DIR.mkdir(parents=True, exist_ok=True)
         model_path = MODELS_DIR / model_name
         if not model_path.is_file():
-            if model_name in PRETRAINED_MODELS:
-                response = requests.get(PRETRAINED_MODELS[model_name])
-                with open(model_path, 'wb') as f_model:
-                    f_model.write(response.content)
-            else:
-                raise ValueError(f'Unknown model {model_name}.')
+            download_pretrained_model(model_name)
         with open(MODELS_DIR / model_name, 'rb') as f_model:
             model_dict = serialization.from_bytes(target=None, encoded_bytes=f_model.read())
             self.variables = model_dict['variables']
