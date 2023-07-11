@@ -43,7 +43,7 @@ class Piscis:
 
     def __init__(
             self,
-            model_name: str = '06162023',
+            model_name: str = '20230709',
             batch_size: int = 4,
             input_size: Optional[Tuple[int, int]] = None
     ) -> None:
@@ -53,7 +53,7 @@ class Piscis:
         Parameters
         ----------
         model_name : str, optional
-            Model name. Default is '06162023'.
+            Model name. Default is '20230709'.
         batch_size : int, optional
             Batch size for the CNN. Default is 4.
         input_size : Optional[Tuple[int, int]], optional
