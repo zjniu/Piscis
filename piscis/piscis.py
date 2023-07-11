@@ -68,7 +68,6 @@ class Piscis:
         self.model_name = model_name
         self.batch_size = batch_size
         self.model = SpotsModel()
-        MODELS_DIR.mkdir(parents=True, exist_ok=True)
         model_path = MODELS_DIR / model_name
         if not model_path.is_file():
             download_pretrained_model(model_name)

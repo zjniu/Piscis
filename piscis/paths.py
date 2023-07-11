@@ -6,4 +6,4 @@ CHECKPOINTS_DIR = PISCIS_DIR / 'checkpoints'
 MODELS_DIR = PISCIS_DIR / 'models'
 
 # Define HuggingFace paths.
-HF_MODELS_DIR = 'wniu/Piscis/models'
+HF_MODELS_DIR = 'wniu/Piscis/models/'
