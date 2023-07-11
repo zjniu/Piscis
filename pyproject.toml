@@ -1,40 +1,40 @@
 [build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
+requires = ['setuptools']
+build-backend = 'setuptools.build_meta'
 
 [project]
-name = "Piscis"
-version = "0.0.1"
-description = "Deep learning algorithm for automatic spot detection in fluorescent microscopy images."
-readme = "README.md"
-requires-python = ">=3.7, <4"
+name = 'Piscis'
+version = '0.0.1'
+description = "An automatic deep learning algorithm for spot detection in fluorescence microscopy images."
+readme = 'README.md'
+requires-python = '>=3.7, <4'
 authors = [
-    {email = "wniu721@gmail.com"},
-    {name = "William Niu"}
+    {email = 'wniu721@gmail.com'},
+    {name = 'William Niu'}
 ]
-keywords = ["machine learning", "deep learning", "spot detection", "fluorescent microscopy"]
+keywords = ['machine learning', 'deep learning', 'spot detection', 'fluorescence microscopy']
 classifiers = [
-    "Development Status :: 4 - Beta",
-    "Programming Language :: Python"
+    'Development Status :: 4 - Beta',
+    'Programming Language :: Python'
 ]
 dependencies = [
-    "deeptile",
-    "flax",
+    'deeptile',
+    'flax',
     'huggingface-hub',
-    "imageio",
-    "numpy",
-    "opencv-python",
-    "pandas",
-    "scikit-image",
-    "scipy",
-    "tqdm"
+    'imageio',
+    'numpy',
+    'opencv-python',
+    'pandas',
+    'scikit-image',
+    'scipy',
+    'tqdm'
 ]
 
 [project.scripts]
-piscis = "piscis.__main__:main"
+piscis = 'piscis.__main__:main'
 
 [tool.setuptools]
-packages = ["piscis", "piscis.models", "piscis.networks"]
+packages = ['piscis', 'piscis.models', 'piscis.networks']
 
 [tool.setuptools.package-data]
-piscis = ["trained_models/*"]
+piscis = ['trained_models/*']
