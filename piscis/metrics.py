@@ -5,7 +5,7 @@ from collections.abc import Iterable
 from scipy import integrate, optimize, spatial
 
 
-def calculate_metric(y_true, y_pred, agg_metric='f1', distance_metric='euclidean', thresholds=1, extended=False):
+def compute_metrics(y_true, y_pred, agg_metric='f1', distance_metric='euclidean', thresholds=1, extended=False):
 
     distance_matrix = spatial.distance.cdist(y_true, y_pred, metric=distance_metric)
 

@@ -90,7 +90,7 @@ def create_train_state(
     return state
 
 
-def compute_metrics(
+def compute_training_metrics(
         deltas_pred: jnp.ndarray,
         labels_pred: jnp.ndarray,
         batch: Dict[str, jnp.ndarray],
@@ -180,7 +180,7 @@ def loss_fn(
         mutated_vars = None
 
     # Compute the loss and metrics.
-    metrics = compute_metrics(deltas_pred, labels_pred, batch, loss_weights)
+    metrics = compute_training_metrics(deltas_pred, labels_pred, batch, loss_weights)
     loss = metrics['loss']
     aux = (metrics, mutated_vars)
 
