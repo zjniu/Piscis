@@ -11,7 +11,7 @@ from typing import Dict, List, Sequence, Tuple
 
 def compute_spot_coordinates(
         deltas: np.ndarray,
-        counts: np.ndarray,
+        pooled_labels: np.ndarray,
         threshold: float,
         min_distance: int,
 ) -> np.ndarray:
@@ -22,8 +22,8 @@ def compute_spot_coordinates(
     ----------
     deltas : np.ndarray
         Subpixel displacements.
-    counts : np.ndarray
-        Mass landscape.
+    pooled_labels : np.ndarray
+        Pooled labels.
     threshold : float
         Detection threshold between 0 and 1.
     min_distance : int
@@ -35,19 +35,20 @@ def compute_spot_coordinates(
         Coordinates of detected spots.
     """
 
-    # Check if the labels are in a stack.
-    stack = counts.ndim == 3
+    # Check if the pooled labels are in a stack.
+    stack = pooled_labels.ndim == 3
 
     if stack:
 
-        # Use connected components to detect spots if labels are in a stack.
-        labels = measure.label(counts > threshold)
+        # Use connected components to detect spots if pooled labels are in a stack.
+        labels = measure.label(pooled_labels > threshold)
         peaks = np.array([region['centroid'] for region in measure.regionprops(labels)], dtype=int)
 
     else:
 
-        # Use peak local maxima to detect spots if labels are not in a stack.
-        peaks = feature.peak_local_max(counts, min_distance=min_distance, threshold_abs=threshold, exclude_border=False)
+        # Use peak local maxima to detect spots if pooled labels are not in a stack.
+        peaks = feature.peak_local_max(pooled_labels,
+                                       min_distance=min_distance, threshold_abs=threshold, exclude_border=False)
 
     # Apply deltas to detected spots.
     if len(peaks) > 0:
@@ -56,19 +57,19 @@ def compute_spot_coordinates(
         else:
             coords = peaks + deltas[peaks[:, 0], peaks[:, 1]]
     else:
-        coords = np.empty((0, counts.ndim), dtype=np.float32)
+        coords = np.empty((0, pooled_labels.ndim), dtype=np.float32)
 
     return coords
 
 
-def scanned_apply_deltas(
+def scanned_sum_pool(
         deltas: jnp.ndarray,
         labels: jnp.ndarray,
         n_iter: int,
-        kernel_size: Sequence[int] = (5, 5)
+        kernel_size: Sequence[int] = (3, 3)
 ) -> jnp.ndarray:
 
-    """Scanned version of `apply_deltas`.
+    """Scanned version of `sum_pool`.
 
     Parameters
     ----------
@@ -79,59 +80,57 @@ def scanned_apply_deltas(
     n_iter : int
         Number of iterations.
     kernel_size : Sequence[int], optional
-        Kernel size or size of the window to search for labels convergence. Default is (5, 5).
+        Kernel size or window size of the sum pooling operation. Default is (3, 3).
 
     Returns
     -------
-    counts : jnp.ndarray
-        Mass landscape of labels after applying deltas for `n_iter` iterations.
+    pooled_labels : jnp.ndarray
+        Pooled labels after sum pooling for `n_iter` iterations.
     """
 
-    carry, _ = scan(lambda c, x: _scanned_apply_deltas(c, kernel_size), (deltas, labels), jnp.empty(n_iter))
-    counts = carry[1]
+    pooled_labels = scan(lambda c, x: _scanned_sum_pool(deltas, c, kernel_size), labels, jnp.empty(n_iter))[0]
 
-    return counts
-
-
-vmap_scanned_apply_deltas = vmap(scanned_apply_deltas, in_axes=(0, 0, None, None))
+    return pooled_labels
 
 
-def _scanned_apply_deltas(
-        carry: Tuple[jnp.ndarray, jnp.ndarray],
+vmap_scanned_sum_pool = vmap(scanned_sum_pool, in_axes=(0, 0, None, None))
+
+
+def _scanned_sum_pool(
+        deltas: jnp.ndarray,
+        pooled_labels: jnp.ndarray,
         kernel_size: Sequence[int]
-) -> Tuple[Tuple[jnp.ndarray, jnp.ndarray], jnp.ndarray]:
+) -> Tuple[jnp.ndarray, None]:
 
     """Single iteration of `scanned_apply_deltas`.
 
     Parameters
     ----------
-    carry : Tuple[jnp.ndarray, jnp.ndarray]
-        Variables carried over from the previous iteration.
+    deltas : jnp.ndarray
+        Subpixel displacements.
+    pooled_labels : jnp.ndarray
+        Pooled labels carried over from the previous iteration.
     kernel_size : Sequence[int]
-        Kernel size or size of the window to search for labels convergence.
+        Kernel size or window size of the sum pooling operation.
 
     Returns
     -------
-    carry : Tuple[jnp.ndarray, jnp.ndarray]
-        Variables to carry to the next iteration.
-    counts : jnp.ndarray
-        Mass landscape of labels after applying deltas for one iteration.
+    pooled_labels : jnp.ndarray
+        Pooled labels to carry to the next iteration.
     """
 
-    deltas, counts = carry
-    counts = apply_deltas(deltas, counts, kernel_size)
-    carry = deltas, counts
+    pooled_labels = sum_pool(deltas, pooled_labels, kernel_size)
 
-    return carry, counts
+    return pooled_labels, None
 
 
-def apply_deltas(
+def sum_pool(
         deltas: jnp.ndarray,
         labels: jnp.ndarray,
         kernel_size: Sequence[int] = (3, 3)
 ) -> jnp.ndarray:
 
-    """Apply deltas to labels.
+    """Sum pool labels using deltas.
 
     Parameters
     ----------
@@ -140,41 +139,36 @@ def apply_deltas(
     labels : jnp.ndarray
         Binary labels.
     kernel_size : Sequence[int], optional
-        Kernel size or size of the window to search for labels convergence. Default is (3, 3).
+        Kernel size or window size of the sum pooling operation. Default is (3, 3).
 
     Returns
     -------
-    counts : jnp.ndarray
-        Mass landscape of labels after applying deltas.
+    pooled_labels : jnp.ndarray
+        Pooled labels.
     """
 
-    # Generate index map.
+    # Generate an index map.
     i, j = jnp.arange(deltas.shape[0]), jnp.arange(deltas.shape[1])
-    ii, jj = jnp.meshgrid(i, j, indexing='ij')
-    index_map = jnp.stack((ii, jj), axis=-1)
+    index_map = jnp.stack(jnp.meshgrid(i, j, indexing='ij'), axis=-1)
 
     # Compute the pixel convergence array after applying deltas.
-    convergence = deltas + index_map
+    convergence = jnp.rint(deltas + index_map).astype(int)
 
     # Pad convergence and labels arrays.
-    pad = (((kernel_size[0] - 1) // 2, ) * 2, ((kernel_size[1] - 1) // 2, ) * 2)
-    convergence = jnp.pad(convergence, (*pad, (0, 0)))
-    labels = jnp.pad(labels, pad)
+    pad_width = (((kernel_size[0] - 1) // 2, ) * 2, ((kernel_size[1] - 1) // 2, ) * 2)
+    convergence = jnp.pad(convergence, (*pad_width, (0, 0)))
+    labels = jnp.pad(labels, pad_width)
 
-    # Vectorize the counts convergence function.
-    vmap_count_convergence = vmap(vmap(_count_convergence,
-                                       in_axes=(None, None, None, None, 0)), in_axes=(None, None, None, 0, None))
+    # Sum pool the label values of pixels that converge at each pixel location.
+    pooled_labels = vmap_sum_convergent_labels(convergence, labels, kernel_size, i, j)
 
-    # Count the number of pixels that converge at each pixel location.
-    counts = vmap_count_convergence(convergence, labels, kernel_size, i, j)
-
-    return counts
+    return pooled_labels
 
 
-vmap_apply_deltas = vmap(apply_deltas, in_axes=(0, 0, None))
+vmap_sum_pool = vmap(sum_pool, in_axes=(0, 0, None))
 
 
-def _count_convergence(
+def _sum_convergent_labels(
         convergence: jnp.ndarray,
         labels: jnp.ndarray,
         kernel_size: Sequence[int],
@@ -182,7 +176,7 @@ def _count_convergence(
         j: jnp.ndarray
 ) -> jnp.ndarray:
 
-    """Count the number of pixels that converge at a given pixel location.
+    """Sum pool the label values of pixels that converge at a given pixel location.
 
     Parameters
     ----------
@@ -199,50 +193,27 @@ def _count_convergence(
 
     Returns
     -------
-    count : jnp.ndarray
-        Number of pixels that converge at the given pixel location.
+    pooled_label : jnp.ndarray
+        Pooled label.
     """
 
     # Extract the convergence and labels arrays in the kernel.
     convergence = dynamic_slice(convergence, (i, j, 0), (*kernel_size, 2))
     labels = dynamic_slice(labels, (i, j), kernel_size)
 
-    # Search for pixel sources that converge at the given pixel location.
-    sources = _search_convergence(convergence, i, j)
+    # Find pixel sources that converge at the given pixel location.
+    sources = jnp.all(convergence == jnp.array((i, j)), axis=-1)
 
-    # Sum values of labels at pixel sources.
-    count = jnp.sum(sources * labels)
+    # Sum pool the label values at pixel sources.
+    pooled_label = jnp.sum(sources * labels)
 
-    return count
+    return pooled_label
 
 
-def _search_convergence(
-        convergence: jnp.ndarray,
-        i: jnp.ndarray,
-        j: jnp.ndarray
-) -> jnp.ndarray:
-
-    """Search for pixel sources that converge at a given pixel location.
-
-    Parameters
-    ----------
-    convergence : jnp.ndarray
-        Convergence array.
-    i : jnp.ndarray
-        Pixel row index.
-    j : jnp.ndarray
-        Pixel column index.
-
-    Returns
-    -------
-    sources : jnp.ndarray
-        Pixel sources that converge at the given pixel location.
-    """
-
-    sources = (i - 0.5 < convergence[:, :, 0]) & (convergence[:, :, 0] < i + 0.5) & \
-              (j - 0.5 < convergence[:, :, 1]) & (convergence[:, :, 1] < j + 0.5)
-
-    return sources
+vmap_sum_convergent_labels = vmap(
+    vmap(_sum_convergent_labels, in_axes=(None, None, None, None, 0)),
+    in_axes=(None, None, None, 0, None)
+)
 
 
 def pad_and_stack(images: Sequence[np.ndarray]) -> np.ndarray:

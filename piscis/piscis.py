@@ -87,9 +87,9 @@ class Piscis:
             x = jnp.expand_dims(x, axis=-1)
             deltas, labels = self.model.apply(self.variables, x, False)
             labels = labels[:, :, :, 0]
-            counts = utils.vmap_apply_deltas(deltas, labels, (3, 3))
+            pooled_labels = utils.vmap_sum_pool(deltas, labels, (3, 3))
 
-            return deltas, counts, labels
+            return deltas, pooled_labels, labels
 
         # Compile the model apply function.
         jitted(jnp.zeros((self.batch_size, *self.input_size)))
@@ -306,20 +306,22 @@ class Piscis:
 
         # Process tiles.
         if intermediates:
-            deltas, counts, labels = self._process(tiles, intermediates=intermediates)
+            deltas, pooled_labels, labels = self._process(tiles, intermediates=intermediates)
         else:
-            deltas, counts = self._process(tiles, intermediates=intermediates)
+            deltas, pooled_labels = self._process(tiles, intermediates=intermediates)
             labels = None
 
         # Postprocess tiles.
         coords = np.empty(len(deltas), dtype=object)
-        for i, (d, c) in enumerate(zip(deltas, counts)):
-            coords[i] = utils.compute_spot_coordinates(d, c, threshold=threshold, min_distance=min_distance)
+        for i, (d, pl) in enumerate(zip(deltas, pooled_labels)):
+            coords[i] = utils.compute_spot_coordinates(d, pl, threshold=threshold, min_distance=min_distance)
             coords[i][:, -2:] = coords[i][:, -2:] / scales
         coords = Output(coords, isimage=False, stackable=False, tile_scales=(1.0, 1.0))
 
         if intermediates:
-            y = np.concatenate((deltas, np.expand_dims(labels, axis=-1), np.expand_dims(counts, axis=-1)), axis=-1)
+            y = np.concatenate(
+                (deltas, np.expand_dims(labels, axis=-1), np.expand_dims(pooled_labels, axis=-1)), axis=-1
+            )
             y = np.moveaxis(y, -1, 1)
             return coords, y
         else:
@@ -403,9 +405,9 @@ class Piscis:
         -------
         deltas : np.ndarray
             Predicted subpixel displacements.
-        counts : np.ndarray
-            Predicted mass landscape.
-        labels : np.ndarray
+        pooled_labels : np.ndarray
+            Predicted pooled labels.
+        labels : np.ndarray, optional
             Predicted binary labels. Only returned if `intermediates` is True.
         """
 
@@ -418,21 +420,21 @@ class Piscis:
 
         # Run the jitted model apply function on tiles.
         if intermediates:
-            deltas, counts, labels = self._jitted(tiles)
+            deltas, pooled_labels, labels = self._jitted(tiles)
             deltas = np.asarray(deltas)
-            counts = np.asarray(counts)
+            pooled_labels = np.asarray(pooled_labels)
             labels = np.asarray(labels)
-            return deltas, counts, labels
+            return deltas, pooled_labels, labels
         else:
-            deltas, counts, _ = self._jitted(tiles)
+            deltas, pooled_labels, _ = self._jitted(tiles)
             deltas = np.asarray(deltas)
-            counts = np.asarray(counts)
-            return deltas, counts
+            pooled_labels = np.asarray(pooled_labels)
+            return deltas, pooled_labels
 
     @staticmethod
     def _postprocess_stack(
             deltas: np.ndarray,
-            counts: np.ndarray,
+            pooled_labels: np.ndarray,
             scales: np.ndarray,
             threshold: float,
             min_distance: int
@@ -444,8 +446,8 @@ class Piscis:
         ----------
         deltas : np.ndarray
             Predicted subpixel displacements.
-        counts : np.ndarray
-            Predicted mass landscape.
+        pooled_labels : np.ndarray
+            Predicted pooled labels.
         scales : np.ndarray
             Scales for rescaling tiles.
         threshold : float
@@ -460,7 +462,7 @@ class Piscis:
         """
 
         # Compute coordinates of detected spots.
-        coords = utils.compute_spot_coordinates(deltas, counts, threshold=threshold, min_distance=min_distance)
+        coords = utils.compute_spot_coordinates(deltas, pooled_labels, threshold=threshold, min_distance=min_distance)
 
         # Rescale coordinates.
         coords[:, -2:] = coords[:, -2:] / scales
