@@ -117,6 +117,7 @@ def _scanned_sum_pool(
     -------
     pooled_labels : jnp.ndarray
         Pooled labels to carry to the next iteration.
+    None
     """
 
     pooled_labels = sum_pool(deltas, pooled_labels, kernel_size)
