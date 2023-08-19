@@ -190,6 +190,34 @@ def dice_loss(
     return dl
 
 
+def masked_rmse_loss(
+        y_pred: jnp.ndarray,
+        y: jnp.ndarray,
+        mask: jnp.ndarray,
+) -> jnp.ndarray:
+
+    """Compute the root-mean-square error over masked pixels.
+
+    Parameters
+    ----------
+    y_pred : jnp.ndarray
+        Predicted values.
+    y : jnp.ndarray
+        Ground truth values.
+    mask : jnp.ndarray
+        Binary mask where 1 indicates pixels to compute RMSE and 0 indicates pixels to ignore.
+
+    Returns
+    -------
+    rmse : jnp.ndarray
+        Masked root-mean-square error.
+    """
+
+    rmse = jnp.sqrt(jnp.sum(((y_pred - y) * mask) ** 2) / jnp.sum(mask))
+
+    return rmse
+
+
 def mse_loss(
         y_pred: jnp.ndarray,
         y: jnp.ndarray,
