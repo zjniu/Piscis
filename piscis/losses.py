@@ -190,7 +190,7 @@ def dice_loss(
     return dl
 
 
-def mean_squared_error(
+def mse_loss(
         y_pred: jnp.ndarray,
         y: jnp.ndarray,
         reduction: Optional[str] = 'mean'
@@ -549,7 +549,7 @@ def binary_focal_loss(
     return bf
 
 
-def cross_entropy_loss(
+def ce_loss(
         y_pred: jnp.ndarray,
         y: jnp.ndarray,
         epsilon: float = 1e-7,
