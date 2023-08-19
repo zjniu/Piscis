@@ -193,7 +193,6 @@ def dice_loss(
 def mse_loss(
         y_pred: jnp.ndarray,
         y: jnp.ndarray,
-        reduction: Optional[str] = 'mean'
 ) -> jnp.ndarray:
 
     """Compute the mean squared error.
@@ -204,8 +203,6 @@ def mse_loss(
         Predicted values.
     y : jnp.ndarray
         Ground truth values.
-    reduction : Optional[str], optional
-        Loss reduction method. Default is 'mean'.
 
     Returns
     -------
@@ -214,7 +211,7 @@ def mse_loss(
     """
 
     mse = (y - y_pred) ** 2
-    mse = _reduce_loss(mse, reduction)
+    mse = _reduce_loss(mse, 'mean')
 
     return mse
 
