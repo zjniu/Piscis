@@ -185,7 +185,7 @@ def _sum_convergent_labels(
     labels : jnp.ndarray
         Binary labels.
     kernel_size : Sequence[int]
-        Kernel size or size of the window to search for labels convergence.
+        Kernel size or window size to search for labels convergence.
     i : jnp.ndarray
         Pixel row index.
     j : jnp.ndarray
@@ -212,6 +212,154 @@ def _sum_convergent_labels(
 
 vmap_sum_convergent_labels = vmap(
     vmap(_sum_convergent_labels, in_axes=(None, None, None, None, 0)),
+    in_axes=(None, None, None, 0, None)
+)
+
+
+def smooth_sum_pool(
+        deltas: jnp.ndarray,
+        labels: jnp.ndarray,
+        sigma: float = 0.5,
+        kernel_size: Sequence[int] = (3, 3)
+) -> jnp.ndarray:
+
+    """Smooth version of `sum_pool`.
+
+    Parameters
+    ----------
+    deltas : jnp.ndarray
+        Subpixel displacements.
+    labels : jnp.ndarray
+        Binary labels.
+    sigma : jnp.ndarray
+        Standard deviation of the Gaussian distribution. Default is 0.5.
+    kernel_size : Sequence[int], optional
+        Kernel size or window size of the sum pooling operation. Default is (3, 3).
+
+    Returns
+    -------
+    pooled_labels : jnp.ndarray
+        Pooled labels.
+    """
+
+    # Generate an index map.
+    i, j = jnp.arange(deltas.shape[0]), jnp.arange(deltas.shape[1])
+    index_map = jnp.stack(jnp.meshgrid(i, j, indexing='ij'), axis=-1)
+
+    # Compute the pixel convergence array after applying deltas.
+    convergence = deltas + index_map
+
+    # Pad convergence and labels arrays.
+    pad_width = (((kernel_size[0] - 1) // 2, ) * 2, ((kernel_size[1] - 1) // 2, ) * 2)
+    index_map = jnp.pad(index_map, (*pad_width, (0, 0)))
+    labels = jnp.pad(labels, pad_width)
+
+    # Compute Gaussian distributions.
+    gaussians = vmap_compute_gaussian_distributions(index_map, convergence, sigma, kernel_size, i, j)
+    gaussians = jnp.pad(gaussians, (*pad_width, (0, 0), (0, 0)))
+
+    # Distribute labels.
+    pooled_labels = vmap_distribute_labels(gaussians, labels, kernel_size, i, j)
+
+    return pooled_labels
+
+
+vmap_smooth_sum_pool = vmap(smooth_sum_pool, in_axes=(0, 0, None, None))
+
+
+def _compute_gaussian_distributions(
+        index_map: jnp.ndarray,
+        convergence: jnp.ndarray,
+        sigma: float,
+        kernel_size: Sequence[int],
+        i: jnp.ndarray,
+        j: jnp.ndarray
+) -> jnp.ndarray:
+
+    """Compute a Gaussian distribution centered at the convergence coordinates of a given pixel location.
+
+    Parameters
+    ----------
+    index_map : jnp.ndarray
+        Index map.
+    convergence : jnp.ndarray
+        Convergence array.
+    sigma : float
+        Standard deviation of the Gaussian distribution.
+    kernel_size : Sequence[int]
+        Kernel size or window size of the Gaussian distribution.
+    i : jnp.ndarray
+        Pixel row index.
+    j : jnp.ndarray
+        Pixel column index.
+
+    Returns
+    -------
+    gaussian : jnp.ndarray
+        Gaussian distribution centered at the convergence coordinates of the given pixel location.
+    """
+
+    # Extract the index map in the kernel.
+    index_map = dynamic_slice(index_map, (i, j, 0), (*kernel_size, 2))
+
+    # Compute the Gaussian distribution centered at the convergence coordinates.
+    gaussian = jnp.exp(-jnp.sum((index_map - convergence) ** 2, axis=-1) / (2 * sigma ** 2)) + 1e-7
+    gaussian = gaussian / jnp.sum(gaussian)
+
+    return gaussian
+
+
+vmap_compute_gaussian_distributions = vmap(
+    vmap(_compute_gaussian_distributions, in_axes=(None, 0, None, None, None, 0)),
+    in_axes=(None, 0, None, None, 0, None)
+)
+
+
+def _distribute_labels(
+        distributions: jnp.ndarray,
+        labels: jnp.ndarray,
+        kernel_size: Sequence[int],
+        i: jnp.ndarray,
+        j: jnp.ndarray
+) -> jnp.ndarray:
+
+    """Distribute the label values of nearby pixels according to a given set of distributions.
+
+    Parameters
+    ----------
+    distributions : jnp.ndarray
+        Distributions array.
+    labels : jnp.ndarray
+        Binary labels.
+    kernel_size : Sequence[int]
+        Kernel size or window size to distribute labels.
+    i : jnp.ndarray
+        Pixel row index.
+    j : jnp.ndarray
+        Pixel column index.
+
+    Returns
+    -------
+    pooled_label : jnp.ndarray
+        Pooled label.
+    """
+
+    # Extract the distributions and labels arrays in the kernel.
+    distributions = dynamic_slice(distributions, (i, j, 0, 0), (*kernel_size, *kernel_size))
+    labels = dynamic_slice(labels, (i, j), kernel_size)
+
+    # Extract weights from the distributions array.
+    k, m = np.indices(kernel_size)
+    weights = distributions[k, m, kernel_size[0] - 1 - k, kernel_size[1] - 1 - m]
+
+    # Distribute the label values of nearby pixels.
+    pooled_label = jnp.sum(weights * labels)
+
+    return pooled_label
+
+
+vmap_distribute_labels = vmap(
+    vmap(_distribute_labels, in_axes=(None, None, None, None, 0)),
     in_axes=(None, None, None, 0, None)
 )
 

@@ -3,7 +3,7 @@ import jax.numpy as jnp
 from jax import vmap
 from typing import Optional, Tuple, Union
 
-from piscis.utils import apply_deltas
+from piscis.utils import smooth_sum_pool
 
 
 def spots_loss(
@@ -141,11 +141,11 @@ def smoothf1_loss(
     dilated_labels = dilated_labels[:, :, 0]
 
     # Apply deltas_pred to labels_pred.
-    counts = apply_deltas(deltas_pred, labels_pred, (3, 3))
+    pooled_labels = smooth_sum_pool(deltas_pred, labels_pred, 0.5, (3, 3))
 
     # Estimate the number of true positives and false positives.
-    tp = jnp.sum(dilated_labels * counts)
-    fp = jnp.sum(labels_pred) - tp
+    tp = jnp.sum(dilated_labels * pooled_labels)
+    fp = jnp.sum(pooled_labels) - tp
 
     # Estimate the mean mass of captured spots.
     num_captured = jnp.sum(labels_pred * labels)
