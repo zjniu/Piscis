@@ -2,6 +2,7 @@ import dask.array as da
 import deeptile
 import jax.numpy as jnp
 import numpy as np
+import xarray as xr
 
 from deeptile import lift, Output
 from deeptile.core.data import Tiled
@@ -103,7 +104,7 @@ class Piscis:
             threshold: float = 1.1,
             min_distance: int = 1,
             intermediates: bool = False
-    ) -> Union[Tuple[np.ndarray, np.ndarray], np.ndarray]:
+    ) -> Union[Tuple[np.ndarray, xr.DataArray], np.ndarray]:
 
         """Predict spots in an image or stack of images.
 
@@ -187,8 +188,14 @@ class Piscis:
             coords = np.asarray(coords)
 
         if intermediates:
+
+            dims = tuple(dim for cond, dim in ((batch_axis, 'n'), (stack, 'z')) if cond) + ('c', 'y', 'x')
+            y = xr.DataArray(y, dims=dims)
+
             return coords, y
+
         else:
+
             return coords
 
     def _predict_stack(
@@ -468,3 +475,44 @@ class Piscis:
         coords = Output(coords, isimage=False, stackable=False, tile_scales=(1.0, 1.0))
 
         return coords
+
+
+def adjust_parameters(
+        y: xr.DataArray,
+        threshold: float,
+        min_distance: int = 1
+):
+    """Adjust tunable parameters for a given set of intermediate feature maps.
+
+    Parameters
+    ----------
+    y : xr.DataArray
+        Intermediate feature maps.
+    threshold: float
+        Spot detection threshold.
+    min_distance : int, optional
+        Minimum distance between spots. Default is 1.
+
+    Returns
+    -------
+    coords : np.ndarray
+        Predicted spot coordinates.
+    """
+
+    if 'n' in y.dims:
+
+        batch_axis_len = y.shape[0]
+        coords = np.empty(batch_axis_len, dtype=object)
+        for i in range(batch_axis_len):
+            deltas = np.moveaxis(y[i, ..., :2, :, :].to_numpy(), -3, -1)
+            pooled_labels = y[i, ..., 3, :, :].to_numpy()
+            coords[i] = utils.compute_spot_coordinates(deltas, pooled_labels,
+                                                       threshold=threshold, min_distance=min_distance)
+
+    else:
+
+        deltas = np.moveaxis(y[..., :2, :, :].to_numpy(), -3, -1)
+        pooled_labels = y[..., 3, :, :].to_numpy()
+        coords = utils.compute_spot_coordinates(deltas, pooled_labels, threshold=threshold, min_distance=min_distance)
+
+    return coords
