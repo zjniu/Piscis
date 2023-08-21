@@ -126,8 +126,8 @@ class Piscis:
         Returns
         -------
         coords : np.ndarray
-            Coordinates of detected spots.
-        y : np.ndarray
+            Predicted spot coordinates.
+        y : np.ndarray, optional
             Intermediate feature maps. Only returned if `intermediates` is True.
         """
 
@@ -140,7 +140,7 @@ class Piscis:
         scales = (np.array([self.input_size]) - 1) / (np.array(tile_size) - 1)
         tiles = dt.get_tiles(tile_size=tile_size, overlap=(0.1, 0.1)).pad(mode='symmetric')
 
-        # Standardize tiles if necessary.
+        # Adjust tiles if necessary.
         if x_stats is not None:
             if self.adjustment == 'normalize':
                 x_min, x_max = x_stats
@@ -221,8 +221,8 @@ class Piscis:
         Returns
         -------
         coords : Output
-            Coordinates of detected spots.
-        y : np.ndarray
+            Predicted spot coordinates.
+        y : np.ndarray, optional
             Intermediate feature maps. Only returned if `intermediates` is True.
         """
 
@@ -299,8 +299,8 @@ class Piscis:
         Returns
         -------
         coords : Output
-            Coordinates of detected spots.
-        y : np.ndarray
+            Predicted spot coordinates.
+        y : np.ndarray, optional
             Intermediate feature maps. Only returned if `intermediates` is True.
         """
 
@@ -348,7 +348,7 @@ class Piscis:
             Preprocessed image or stack of images.
         batch_axis : bool
             Whether `x` has a batch axis.
-        x_stats : Optional[Tuple[np.ndarray, np.ndarray]]]
+        x_stats : Optional[Tuple[np.ndarray, np.ndarray]]
             Statistics of `x` across each plane used for image adjustment.
 
         Raises
@@ -369,7 +369,7 @@ class Piscis:
         elif ((ndim == 2) and (not stack)) or ((ndim == 3) and stack):
             batch_axis = False
         else:
-            raise ValueError("Input does not have the correct dimensions.")
+            raise ValueError("The input does not have the correct dimensions.")
 
         # Standardize the input if necessary.
         if self.adjustment == 'normalize':
@@ -384,7 +384,6 @@ class Piscis:
             x_stats = None
 
         return x, batch_axis, x_stats
-
 
     def _process(
             self,
@@ -458,10 +457,10 @@ class Piscis:
         Returns
         -------
         coords : Output
-            Coordinates of detected spots.
+            Predicted spot coordinates.
         """
 
-        # Compute coordinates of detected spots.
+        # Compute spot coordinates.
         coords = utils.compute_spot_coordinates(deltas, pooled_labels, threshold=threshold, min_distance=min_distance)
 
         # Rescale coordinates.

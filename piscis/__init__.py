@@ -1,1 +1,1 @@
-from piscis.piscis import Piscis
+from piscis.core import Piscis
