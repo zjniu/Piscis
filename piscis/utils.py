@@ -569,7 +569,7 @@ def snap_coords(
 
     # Check the window size.
     if window_size % 2 == 0:
-        raise ValueError('window_size must be an odd integer.')
+        raise ValueError("window_size must be an odd integer.")
 
     # Remove coordinates outside the image.
     coords = coords[(coords[:, 0] > -0.5) & (coords[:, 1] > -0.5) &
@@ -637,7 +637,7 @@ def fit_coords(
 
     # Check the window size.
     if window_size % 2 == 0:
-        raise ValueError('window_size must be an odd integer.')
+        raise ValueError("window_size must be an odd integer.")
 
     # Remove coordinates outside the image.
     coords = coords[(coords[:, 0] > -0.5) & (coords[:, 1] > -0.5) &

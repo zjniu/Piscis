@@ -411,7 +411,7 @@ def train_model(
     """
 
     if warmup_epochs + decay_epochs > epochs:
-        raise ValueError('warmup_epochs + decay_epochs cannot be greater than epochs.')
+        raise ValueError("warmup_epochs + decay_epochs cannot be greater than epochs.")
 
     # Load datasets.
     print('Loading datasets...')

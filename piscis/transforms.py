@@ -205,7 +205,7 @@ class RandomAugment:
             elif interpolation == 'bilinear':
                 image = cv.warpAffine(image, M=affine, dsize=self.output_size, flags=cv.INTER_LINEAR)
             else:
-                raise ValueError('Interpolation mode is not supported.')
+                raise ValueError("Interpolation mode is not supported.")
 
             # Random flip
             if flip0:
@@ -290,7 +290,7 @@ def adjust(
     elif adjustment == 'standardize':
         adjusted_image = standardize(image, **kwargs)
     else:
-        raise ValueError('Adjustment type is not supported.')
+        raise ValueError("Adjustment type is not supported.")
 
     return adjusted_image
 

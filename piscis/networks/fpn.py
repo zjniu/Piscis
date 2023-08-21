@@ -230,7 +230,7 @@ class Decoder(nn.Module):
         elif self.aggregate == 'concatenate':
             aggregate_feature_maps = jnp.concatenate(feature_maps, axis=-1)
         else:
-            raise ValueError(f'Aggregation mode is not supported.')
+            raise ValueError(f"Aggregation mode is not supported.")
 
         return aggregate_feature_maps
 

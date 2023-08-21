@@ -31,7 +31,7 @@ def download_pretrained_model(
     if fs.exists(hf_model_path):
         fs.download(hf_model_path, str(MODELS_DIR / model_name))
     else:
-        raise ValueError(f'Model {model_name} is not found.')
+        raise ValueError(f"Model {model_name} is not found.")
 
 
 def list_pretrained_models() -> Sequence[str]:
@@ -75,7 +75,7 @@ def download_dataset(
     if fs.exists(hf_dataset_path):
         fs.download(hf_dataset_path, str(Path(path) / dataset_name), recursive=True)
     else:
-        raise ValueError(f'Dataset {dataset_name} is not found.')
+        raise ValueError(f"Dataset {dataset_name} is not found.")
 
 
 def list_datasets() -> Sequence[str]:

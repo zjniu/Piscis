@@ -53,7 +53,7 @@ class Conv(nn.Module):
             elif layer == 'act':
                 layers.append(self.act)
             else:
-                raise ValueError(f'Unknown layer {layer}.')
+                raise ValueError(f"Unknown layer {layer}.")
 
         x = nn.Sequential(layers)(x)
 
