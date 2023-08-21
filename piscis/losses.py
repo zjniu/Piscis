@@ -1,106 +1,10 @@
 import jax.numpy as jnp
 
+from functools import wraps
 from jax import vmap
-from typing import Optional, Tuple, Union
+from typing import Callable, Optional, Union
 
 from piscis.utils import smooth_sum_pool
-
-
-def spots_loss(
-        deltas_pred: jnp.ndarray,
-        labels_pred: jnp.ndarray,
-        deltas: jnp.ndarray,
-        labels: jnp.ndarray,
-        dilated_labels: jnp.ndarray,
-        epsilon: float = 1e-7,
-        reduction: Optional[str] = 'mean'
-) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-
-    """Compute the loss function for training SpotsModel.
-
-    Parameters
-    ----------
-    deltas_pred : jnp.ndarray
-        Predicted subpixel displacements.
-    labels_pred : jnp.ndarray
-        Predicted binary labels.
-    deltas : jnp.ndarray
-        Ground truth subpixel displacements.
-    labels : jnp.ndarray
-        Ground truth binary labels.
-    dilated_labels : jnp.ndarray
-        Dilated ground truth binary labels.
-    epsilon : float, optional
-        Small constant for numerical stability. Default is 1e-7.
-    reduction : Optional[str], optional
-        Loss reduction method. Default is 'mean'.
-
-    Returns
-    -------
-    rmse : jnp.ndarray
-        Root mean squared error.
-    bce : jnp.ndarray
-        Binary cross entropy loss.
-    sf1 : jnp.ndarray
-        SmoothF1 loss.
-    """
-
-    # Vectorize the loss function.
-    vmap_spots_loss = vmap(_spots_loss, in_axes=(0, 0, 0, 0, 0, None, None))
-
-    # Compute and reduce loss terms.
-    rmse, bce, sf1 = vmap_spots_loss(deltas_pred, labels_pred, deltas, labels, dilated_labels, epsilon, reduction)
-    rmse = _reduce_loss(rmse, reduction)
-    bce = _reduce_loss(bce, reduction)
-    sf1 = _reduce_loss(sf1, reduction)
-
-    return rmse, bce, sf1
-
-
-def _spots_loss(
-        deltas_pred: jnp.ndarray,
-        labels_pred: jnp.ndarray,
-        deltas: jnp.ndarray,
-        labels: jnp.ndarray,
-        dilated_labels: jnp.ndarray,
-        epsilon: float,
-        reduction: Optional[str]
-) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-
-    """Compute the rmse, bce, and sf1 loss terms for a single batch element.
-
-    Parameters
-    ----------
-    deltas_pred : jnp.ndarray
-        Predicted subpixel displacements.
-    labels_pred : jnp.ndarray
-        Predicted binary labels.
-    deltas : jnp.ndarray
-        Ground truth subpixel displacements.
-    labels : jnp.ndarray
-        Ground truth binary labels.
-    dilated_labels : jnp.ndarray
-        Dilated ground truth binary labels.
-    epsilon : float
-        Small constant for numerical stability.
-    reduction : Optional[str]
-        Loss reduction method.
-
-    Returns
-    -------
-    rmse : jnp.ndarray
-        Root mean squared error.
-    bce : jnp.ndarray
-        Binary cross entropy loss.
-    sf1 : jnp.ndarray
-        SmoothF1 loss.
-    """
-
-    rmse = jnp.sqrt(jnp.sum(((deltas - deltas_pred) * dilated_labels) ** 2) / jnp.sum(dilated_labels))
-    bce = weighted_bce_loss(labels_pred, dilated_labels, alpha=0.5, epsilon=epsilon, reduction=reduction)
-    sf1 = smoothf1_loss(deltas_pred, labels_pred, labels, dilated_labels, epsilon=epsilon)
-
-    return rmse, bce, sf1
 
 
 def smoothf1_loss(
@@ -111,7 +15,7 @@ def smoothf1_loss(
         epsilon: float = 1e-7
 ) -> jnp.ndarray:
 
-    """Compute the SmoothF1 loss for a single batch element.
+    """Compute the SmoothF1 loss.
 
     Parameters
     ----------
@@ -128,7 +32,7 @@ def smoothf1_loss(
 
     Returns
     -------
-    sf1 : jnp.ndarray
+    smoothf1 : jnp.ndarray
         SmoothF1 loss.
     """
 
@@ -156,9 +60,9 @@ def smoothf1_loss(
     fn = num_uncaptured * spot_mass
 
     # Compute the SmoothF1 loss.
-    sf1 = -2 * tp / (2 * tp + fp + fn + epsilon)
+    smoothf1 = -2 * tp / (2 * tp + fp + fn + epsilon)
 
-    return sf1
+    return smoothf1
 
 
 def dice_loss(
@@ -239,7 +143,7 @@ def mse_loss(
     """
 
     mse = (y - y_pred) ** 2
-    mse = _reduce_loss(mse, 'mean')
+    mse = reduce_loss(mse, 'mean')
 
     return mse
 
@@ -274,7 +178,7 @@ def bce_loss(
     """
 
     bce = -(pos_weight * jnp.log(y_pred + epsilon) * y + jnp.log((1 - y_pred) + epsilon) * (1 - y))
-    bce = _reduce_loss(bce, reduction)
+    bce = reduce_loss(bce, reduction)
 
     return bce
 
@@ -308,7 +212,7 @@ def bce_with_logits_loss(
     neg_abs = -jnp.abs(y_pred)
     bce = jnp.maximum(y_pred, 0) - y_pred * y + jnp.log(1 + jnp.exp(neg_abs))
     bce = jnp.where(y, pos_weight * bce, bce)
-    bce = _reduce_loss(bce, reduction)
+    bce = reduce_loss(bce, reduction)
 
     return bce
 
@@ -569,7 +473,7 @@ def binary_focal_loss(
 
     bf = -((1 - y_pred) ** gamma * jnp.log(y_pred + epsilon) * y +
            y_pred ** gamma * jnp.log((1 - y_pred) + epsilon) * (1 - y))
-    bf = _reduce_loss(bf, reduction=reduction)
+    bf = reduce_loss(bf, reduction=reduction)
 
     return bf
 
@@ -601,7 +505,7 @@ def ce_loss(
     """
 
     ce = -(jnp.log(y_pred + epsilon) * y)
-    ce = _reduce_loss(ce, reduction=reduction)
+    ce = reduce_loss(ce, reduction=reduction)
 
     return ce
 
@@ -641,7 +545,7 @@ def focal_loss(
     """
 
     f = -((1 - y_pred) ** gamma * jnp.log(y_pred + epsilon) * y)
-    f = _reduce_loss(f, reduction=reduction)
+    f = reduce_loss(f, reduction=reduction)
 
     return f
 
@@ -798,7 +702,46 @@ def _vector_scaling(
     return y_pred
 
 
-def _reduce_loss(
+def wrap_loss_fn(
+        loss_fn: Callable,
+        axis: int = 0,
+        reduction: Optional[str] = 'mean'
+) -> Callable:
+    """Wrap a loss function for vectorization and loss reduction.
+
+    Parameters
+    ----------
+    loss_fn : Callable
+        Loss function.
+    axis : int, optional
+        Axis to vectorize over. Default is 0.
+    reduction : Optional[str], optional
+        Loss reduction method. Default is 'mean'.
+
+    Returns
+    -------
+    wrapped_loss_fn : Callable
+        Wrapped loss function.
+    """
+
+    @wraps(loss_fn)
+    def wrapped_loss_fn(*args):
+
+        # Build in_axes dynamically from the arguments.
+        in_axes = tuple(axis if isinstance(arg, jnp.ndarray) else None for arg in args)
+
+        # Vectorize the loss function.
+        loss = vmap(loss_fn, in_axes=in_axes)(*args)
+
+        # Reduce the loss.
+        loss = reduce_loss(loss, reduction=reduction)
+
+        return loss
+
+    return wrapped_loss_fn
+
+
+def reduce_loss(
         loss: jnp.ndarray,
         reduction: Optional[str] = 'mean'
 ) -> jnp.ndarray:

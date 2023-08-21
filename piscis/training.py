@@ -13,7 +13,7 @@ from tqdm.auto import tqdm
 from typing import Any, Dict, List, Optional, Tuple
 
 from piscis.data import load_datasets, transform_batch, transform_subdataset
-from piscis.losses import spots_loss
+from piscis.losses import dice_loss, masked_rmse_loss, smoothf1_loss, weighted_bce_loss, wrap_loss_fn
 from piscis.models.spots import SpotsModel
 from piscis.optimizers import sgdw
 from piscis.paths import CHECKPOINTS_DIR, MODELS_DIR
@@ -113,22 +113,28 @@ def compute_training_metrics(
     Returns
     -------
     metrics : Dict[str, jnp.ndarray]
-        Dictionary containing the rmse, bce, sf1, and overall loss values.
+        Dictionary containing the values of individual loss terms and the overall loss.
     """
 
-    # Compute losses.
-    rmse, bce, sf1 = spots_loss(deltas_pred, labels_pred, batch['deltas'], batch['labels'], batch['dilated_labels'])
+    # Create the metrics dictionary.
+    metrics = {}
+
+    # Compute loss terms.
+    if 'rmse' in loss_weights:
+        rmse = wrap_loss_fn(masked_rmse_loss)(deltas_pred, batch['deltas'], batch['dilated_labels'])
+        metrics['rmse'] = rmse
+    if 'bce' in loss_weights:
+        bce = wrap_loss_fn(weighted_bce_loss)(labels_pred, batch['labels'])
+        metrics['bce'] = bce
+    if 'dice' in loss_weights:
+        dice = wrap_loss_fn(dice_loss)(labels_pred, batch['labels'])
+        metrics['dice'] = dice
+    if 'smoothf1' in loss_weights:
+        smoothf1 = wrap_loss_fn(smoothf1_loss)(deltas_pred, labels_pred, batch['labels'], batch['dilated_labels'])
+        metrics['smoothf1'] = smoothf1
 
     # Compute the overall loss.
-    loss = loss_weights['rmse'] * rmse + loss_weights['bce'] * bce + loss_weights['sf1'] * sf1
-
-    # Create the metrics dictionary.
-    metrics = {
-        'rmse': rmse,
-        'bce': bce,
-        'sf1': sf1,
-        'loss': loss
-    }
+    metrics['loss'] = sum([loss_weights[k] * v for k, v in metrics.items()])
 
     return metrics
 
@@ -164,7 +170,7 @@ def loss_fn(
     -------
     loss : jnp.ndarray
         Overall loss value.
-    aux : Tuple[Dict[str, jnp.ndarray], Dict]]
+    aux : Tuple[Dict[str, jnp.ndarray], Dict]
         Auxiliary containing metrics and mutable state variables.
     """
 
@@ -213,7 +219,7 @@ def train_step(
     state : TrainState
         Updated training state.
     metrics : Dict[str, jnp.ndarray]
-        Dictionary containing the rmse, bce, sf1, and overall loss values.
+        Dictionary containing the values of individual loss terms and the overall loss.
     """
 
     # Define the gradient function.
@@ -290,6 +296,7 @@ def train_epoch(
 
     batch_metrics = []
     epoch_metrics = {}
+    summary = None
     for perm in perms:
 
         # Extract and transform the current training batch.
@@ -308,10 +315,8 @@ def train_epoch(
         epoch_metrics['n_steps'] = n_steps
 
         # Update the progress bar.
-        summary = (
-            f"(train) loss: {epoch_metrics['loss']:> 6.4f}, rmse: {epoch_metrics['rmse']:> 6.4f}, "
-            f"bce: {epoch_metrics['bce']:> 6.4f}, sf1: {epoch_metrics['sf1']:> 6.4f}"
-        )
+        summary = f'''(train) loss: {epoch_metrics['loss']:> 6.4f}, 
+                      {', '.join([f'{k}: {epoch_metrics[k]:> 6.4f}' for k in loss_weights])}'''
         pbar.update(1)
         pbar.set_postfix_str(summary)
 
@@ -334,13 +339,10 @@ def train_epoch(
             for k in val_batch_metrics[0]}
 
         # Update the progress bar.
-        summary = (
-            f"(valid) loss: {val_epoch_metrics['val_loss']:> 6.4f}, rmse: {val_epoch_metrics['val_rmse']:> 6.4f}, "
-            f"bce: {val_epoch_metrics['val_bce']:> 6.4f}, sf1: {val_epoch_metrics['val_sf1']:> 6.4f} | "
-            f"(train) loss: {epoch_metrics['loss']:> 6.4f}, rmse: {epoch_metrics['rmse']:> 6.4f}, "
-            f"bce: {epoch_metrics['bce']:> 6.4f}, sf1: {epoch_metrics['sf1']:> 6.4f}"
-        )
-        pbar.set_postfix_str(summary)
+        val_summary = f'''(valid) loss: {val_epoch_metrics['val_loss']:> 6.4f}, 
+                          {', '.join([f"val_{k}: {val_epoch_metrics[f'val_{k}']:> 6.4f}" for k in loss_weights])} | 
+                          {summary}'''
+        pbar.set_postfix_str(val_summary)
 
     pbar.close()
 
@@ -399,7 +401,8 @@ def train_model(
     decay_transition_epochs : int, optional
         Number of epochs for each decay transition in learning rate scheduling. Default is 10.
     loss_weights : Optional[Dict[str, float]], optional
-        Weights for terms in the overall loss function. Default is {'rmse': 0.4, 'bce': 0.2 'sf1': 1.0}.
+        Weights for terms in the overall loss function. Supported terms are 'rmse', 'bce', 'dice', and 'smoothf1'. If
+        None, the loss weights {'rmse': 0.5, 'smoothf1': 1.0} will be used. Default is None.
 
     Raises
     ------
@@ -432,11 +435,7 @@ def train_model(
 
     # Default loss weights.
     if loss_weights is None:
-        loss_weights = {
-            'rmse': 0.4,
-            'bce': 0.2,
-            'sf1': 1.0
-        }
+        loss_weights = {'rmse': 0.5, 'smoothf1': 1.0}
 
     # Define directories for storing checkpoints and the model.
     checkpoint_path = CHECKPOINTS_DIR / model_name
