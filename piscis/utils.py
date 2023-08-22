@@ -224,7 +224,12 @@ def smooth_sum_pool(
         kernel_size: Sequence[int] = (3, 3)
 ) -> jnp.ndarray:
 
-    """Smooth version of `sum_pool`.
+    """Sum pool labels using deltas.
+
+    Unlike conventional pooling, which takes a discrete summation, each pixel's contribution to the pooled result of
+    neighboring pixels is determined by an isotropic Gaussian distribution. This Gaussian is centered at the pixel's
+    convergence coordinates given by `delta` and has standard deviation `sigma` in each axis. This operation is
+    designed to be differentiable and thus suitable to be used within a loss function during training.
 
     Parameters
     ----------
