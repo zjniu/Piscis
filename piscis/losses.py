@@ -45,7 +45,7 @@ def smoothf1_loss(
     dilated_labels = dilated_labels[:, :, 0]
 
     # Apply deltas_pred to labels_pred.
-    pooled_labels = smooth_sum_pool(deltas_pred, labels_pred, 0.5, (3, 3))
+    pooled_labels = smooth_sum_pool(deltas_pred, labels_pred, 0.5, (3, 3), epsilon)
 
     # Estimate the number of true positives and false positives.
     tp = jnp.sum(dilated_labels * pooled_labels)

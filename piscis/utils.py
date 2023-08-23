@@ -221,7 +221,8 @@ def smooth_sum_pool(
         deltas: jnp.ndarray,
         labels: jnp.ndarray,
         sigma: float = 0.5,
-        kernel_size: Sequence[int] = (3, 3)
+        kernel_size: Sequence[int] = (3, 3),
+        epsilon: float = 1e-7
 ) -> jnp.ndarray:
 
     """Sum pool labels using deltas.
@@ -241,6 +242,8 @@ def smooth_sum_pool(
         Standard deviation of the Gaussian distribution. Default is 0.5.
     kernel_size : Sequence[int], optional
         Kernel size or window size of the sum pooling operation. Default is (3, 3).
+    epsilon : float, optional
+        Small constant for numerical stability. Default is 1e-7.
 
     Returns
     -------
@@ -261,7 +264,7 @@ def smooth_sum_pool(
     labels = jnp.pad(labels, pad_width)
 
     # Compute Gaussian distributions.
-    gaussians = vmap_compute_gaussian_distributions(index_map, convergence, sigma, kernel_size, i, j)
+    gaussians = vmap_compute_gaussian_distributions(index_map, convergence, sigma, kernel_size, epsilon, i, j)
     gaussians = jnp.pad(gaussians, (*pad_width, (0, 0), (0, 0)))
 
     # Distribute labels.
@@ -270,7 +273,7 @@ def smooth_sum_pool(
     return pooled_labels
 
 
-vmap_smooth_sum_pool = vmap(smooth_sum_pool, in_axes=(0, 0, None, None))
+vmap_smooth_sum_pool = vmap(smooth_sum_pool, in_axes=(0, 0, None, None, None))
 
 
 def _compute_gaussian_distributions(
@@ -278,6 +281,7 @@ def _compute_gaussian_distributions(
         convergence: jnp.ndarray,
         sigma: float,
         kernel_size: Sequence[int],
+        epsilon: float,
         i: jnp.ndarray,
         j: jnp.ndarray
 ) -> jnp.ndarray:
@@ -294,6 +298,8 @@ def _compute_gaussian_distributions(
         Standard deviation of the Gaussian distribution.
     kernel_size : Sequence[int]
         Kernel size or window size of the Gaussian distribution.
+    epsilon : float
+        Small constant for numerical stability.
     i : jnp.ndarray
         Pixel row index.
     j : jnp.ndarray
@@ -309,15 +315,15 @@ def _compute_gaussian_distributions(
     index_map = dynamic_slice(index_map, (i, j, 0), (*kernel_size, 2))
 
     # Compute the Gaussian distribution centered at the convergence coordinates.
-    gaussian = jnp.exp(-jnp.sum((index_map - convergence) ** 2, axis=-1) / (2 * sigma ** 2)) + 1e-7
-    gaussian = gaussian / jnp.sum(gaussian)
+    gaussian = jnp.exp(-jnp.sum((index_map - convergence) ** 2, axis=-1) / (2 * sigma ** 2))
+    gaussian = gaussian / (jnp.sum(gaussian) + epsilon)
 
     return gaussian
 
 
 vmap_compute_gaussian_distributions = vmap(
-    vmap(_compute_gaussian_distributions, in_axes=(None, 0, None, None, None, 0)),
-    in_axes=(None, 0, None, None, 0, None)
+    vmap(_compute_gaussian_distributions, in_axes=(None, 0, None, None, None, None, 0)),
+    in_axes=(None, 0, None, None, None, 0, None)
 )
 
 
