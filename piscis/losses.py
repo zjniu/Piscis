@@ -10,7 +10,6 @@ from piscis.utils import smooth_sum_pool
 def smoothf1_loss(
         deltas_pred: jnp.ndarray,
         labels_pred: jnp.ndarray,
-        labels: jnp.ndarray,
         dilated_labels: jnp.ndarray,
         epsilon: float = 1e-7
 ) -> jnp.ndarray:
@@ -41,23 +40,15 @@ def smoothf1_loss(
 
     # Squeeze the channel dimension in labels arrays.
     labels_pred = labels_pred[:, :, 0]
-    labels = labels[:, :, 0]
     dilated_labels = dilated_labels[:, :, 0]
 
     # Apply deltas_pred to labels_pred.
     pooled_labels = smooth_sum_pool(deltas_pred, labels_pred, 0.5, (3, 3), epsilon)
 
-    # Estimate the number of true positives and false positives.
+    # Estimate the number of true positives, false positives, and false negatives.
     tp = jnp.sum(dilated_labels * pooled_labels)
     fp = jnp.sum(pooled_labels) - tp
-
-    # Estimate the mean mass of captured spots.
-    num_captured = jnp.sum(labels_pred * labels)
-    num_uncaptured = jnp.sum(labels) - num_captured
-    spot_mass = tp / (num_captured + epsilon)
-
-    # Estimate the number of false negatives.
-    fn = num_uncaptured * spot_mass
+    fn = jnp.sum(dilated_labels) - tp
 
     # Compute the SmoothF1 loss.
     smoothf1 = -2 * tp / (2 * tp + fp + fn + epsilon)

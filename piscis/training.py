@@ -130,7 +130,7 @@ def compute_training_metrics(
         dice = wrap_loss_fn(dice_loss)(labels_pred, batch['labels'])
         metrics['dice'] = dice
     if 'smoothf1' in loss_weights:
-        smoothf1 = wrap_loss_fn(smoothf1_loss)(deltas_pred, labels_pred, batch['labels'], batch['dilated_labels'])
+        smoothf1 = wrap_loss_fn(smoothf1_loss)(deltas_pred, labels_pred, batch['dilated_labels'])
         metrics['smoothf1'] = smoothf1
 
     # Compute the overall loss.
