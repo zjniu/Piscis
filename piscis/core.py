@@ -101,7 +101,7 @@ class Piscis:
             x: Union[np.ndarray, da.Array],
             stack: bool = False,
             scale: float = 1.0,
-            threshold: float = 1.1,
+            threshold: float = 2.0,
             min_distance: int = 1,
             intermediates: bool = False
     ) -> Union[Tuple[np.ndarray, xr.DataArray], np.ndarray]:
@@ -118,7 +118,7 @@ class Piscis:
             Scale factor for rescaling `x`. Default is 1.
         threshold : float, optional
             Spot detection threshold. Can be interpreted as the minimum number of fully confident pixels necessary to
-            identify a spot. Typical values fall between 1 and 2. Default is 1.1.
+            identify a spot. Default is 2.0.
         min_distance : int, optional
             Minimum distance between spots. Default is 1.
         intermediates : bool, optional
@@ -219,7 +219,8 @@ class Piscis:
         scales : np.ndarray
             Scales for rescaling tiles.
         threshold : float
-            Detection threshold between 0 and 1.
+            Spot detection threshold. Can be interpreted as the minimum number of fully confident pixels necessary to
+            identify a spot.
         min_distance : int
             Minimum distance between spots.
         intermediates : bool
@@ -297,7 +298,8 @@ class Piscis:
         scales : np.ndarray
             Scales for rescaling tiles.
         threshold : float
-            Detection threshold between 0 and 1.
+            Spot detection threshold. Can be interpreted as the minimum number of fully confident pixels necessary to
+            identify a spot.
         min_distance : int
             Minimum distance between spots.
         intermediates : bool
@@ -457,7 +459,8 @@ class Piscis:
         scales : np.ndarray
             Scales for rescaling tiles.
         threshold : float
-            Detection threshold between 0 and 1.
+            Spot detection threshold. Can be interpreted as the minimum number of fully confident pixels necessary to
+            identify a spot.
         min_distance : int
             Minimum distance between spots.
 
@@ -479,7 +482,7 @@ class Piscis:
 
 def adjust_parameters(
         y: xr.DataArray,
-        threshold: float,
+        threshold: float = 2.0,
         min_distance: int = 1
 ):
     """Adjust tunable parameters for a given set of intermediate feature maps.
@@ -489,7 +492,8 @@ def adjust_parameters(
     y : xr.DataArray
         Intermediate feature maps.
     threshold: float
-        Spot detection threshold.
+        Spot detection threshold. Can be interpreted as the minimum number of fully confident pixels necessary to
+        identify a spot. Default is 2.0.
     min_distance : int, optional
         Minimum distance between spots. Default is 1.
 
