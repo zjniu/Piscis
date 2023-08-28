@@ -744,17 +744,24 @@ def reduce_loss(
     loss : jnp.ndarray
         Loss array to be reduced.
     reduction : Optional[str], optional
-        Loss reduction method. Default is 'mean'.
+        Loss reduction method. Supported methods are 'mean' and 'sum'. Default is 'mean'.
 
     Returns
     -------
     loss : jnp.ndarray
         Reduced loss.
+
+    Raises
+    ------
+    ValueError
+        If the `reduction` method is not supported.
     """
 
     if reduction == 'mean':
         loss = jnp.mean(loss)
     elif reduction == 'sum':
         loss = jnp.sum(loss)
+    else:
+        raise ValueError("Reduction method is not supported.")
 
     return loss
