@@ -10,7 +10,8 @@ from piscis.utils import smooth_sum_pool
 def smoothf1_loss(
         deltas_pred: jnp.ndarray,
         labels_pred: jnp.ndarray,
-        dilated_labels: jnp.ndarray,
+        labels: jnp.ndarray,
+        dilation_iterations: int,
         epsilon: float = 1e-7
 ) -> jnp.ndarray:
 
@@ -24,8 +25,8 @@ def smoothf1_loss(
         Predicted binary labels.
     labels : jnp.ndarray
         Ground truth binary labels.
-    dilated_labels : jnp.ndarray
-        Dilated ground truth binary labels.
+    dilation_iterations : int
+        Number of iterations used to dilate ground truth labels.
     epsilon : float, optional
         Small constant for numerical stability. Default is 1e-7.
 
@@ -35,20 +36,21 @@ def smoothf1_loss(
         SmoothF1 loss.
     """
 
-    # Use dilated_labels as the support for deltas_pred.
-    deltas_pred = deltas_pred * dilated_labels
+    # Use labels as the support for deltas_pred.
+    deltas_pred = labels * deltas_pred
 
     # Squeeze the channel dimension in labels arrays.
     labels_pred = labels_pred[:, :, 0]
-    dilated_labels = dilated_labels[:, :, 0]
+    labels = labels[:, :, 0]
 
     # Apply deltas_pred to labels_pred.
-    pooled_labels = smooth_sum_pool(deltas_pred, labels_pred, 0.5, (3, 3), epsilon)
+    kernel_size = (2 * dilation_iterations + 1, ) * 2
+    pooled_labels = smooth_sum_pool(deltas_pred, labels_pred, 0.5, kernel_size)
 
     # Estimate the number of true positives, false positives, and false negatives.
-    tp = jnp.sum(dilated_labels * pooled_labels)
+    tp = jnp.sum(labels * pooled_labels)
     fp = jnp.sum(pooled_labels) - tp
-    fn = jnp.sum(dilated_labels) - tp
+    fn = jnp.sum(labels) - tp
 
     # Compute the SmoothF1 loss.
     smoothf1 = -2 * tp / (2 * tp + fp + fn + epsilon)

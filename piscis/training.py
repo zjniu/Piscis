@@ -94,6 +94,7 @@ def compute_training_metrics(
         deltas_pred: jnp.ndarray,
         labels_pred: jnp.ndarray,
         batch: Dict[str, jnp.ndarray],
+        dilation_iterations: int,
         loss_weights: Dict[str, float]
 ) -> Dict[str, jnp.ndarray]:
 
@@ -107,6 +108,8 @@ def compute_training_metrics(
         Predicted binary labels.
     batch : Dict[str, jnp.ndarray]
         Dictionary containing the input image and target arrays.
+    dilation_iterations : int
+        Number of iterations used to dilate ground truth labels.
     loss_weights : Dict[str, float]
         Weights for terms in the overall loss function.
 
@@ -121,30 +124,28 @@ def compute_training_metrics(
 
     # Compute loss terms.
     if 'rmse' in loss_weights:
-        rmse = wrap_loss_fn(masked_rmse_loss)(deltas_pred, batch['deltas'], batch['dilated_labels'])
-        metrics['rmse'] = rmse
+        metrics['rmse'] = wrap_loss_fn(masked_rmse_loss)(deltas_pred, batch['deltas'], batch['labels'])
     if 'bce' in loss_weights:
-        bce = wrap_loss_fn(weighted_bce_loss)(labels_pred, batch['labels'])
-        metrics['bce'] = bce
+        metrics['bce'] = wrap_loss_fn(weighted_bce_loss)(labels_pred, batch['labels'])
     if 'dice' in loss_weights:
-        dice = wrap_loss_fn(dice_loss)(labels_pred, batch['labels'])
-        metrics['dice'] = dice
+        metrics['dice'] = wrap_loss_fn(dice_loss)(labels_pred, batch['labels'])
     if 'smoothf1' in loss_weights:
-        smoothf1 = wrap_loss_fn(smoothf1_loss)(deltas_pred, labels_pred, batch['dilated_labels'])
-        metrics['smoothf1'] = smoothf1
+        metrics['smoothf1'] = \
+            wrap_loss_fn(smoothf1_loss)(deltas_pred, labels_pred, batch['labels'], dilation_iterations)
 
     # Compute the overall loss.
-    metrics['loss'] = sum([loss_weights[k] * v for k, v in metrics.items()])
+    metrics['loss'] = jnp.array(sum([loss_weights[k] * v for k, v in metrics.items()]))
 
     return metrics
 
 
-@partial(jit, static_argnums=5)
+@partial(jit, static_argnums=(4, 6))
 def loss_fn(
         params: Any,
         batch_stats: Any,
         batch: Dict[str, jnp.ndarray],
         key: Optional[jnp.ndarray],
+        dilation_iterations: int,
         loss_weights: Dict[str, float],
         train: bool
 ) -> Tuple[jnp.ndarray, Tuple[Dict[str, jnp.ndarray], Dict]]:
@@ -161,6 +162,8 @@ def loss_fn(
         Dictionary containing the input images and target arrays.
     key : Optional[jnp.ndarray]
         Random Key used for dropout.
+    dilation_iterations : int
+        Number of iterations used to dilate ground truth labels.
     loss_weights : Dict[str, float]
         Weights for terms in the overall loss function.
     train : bool
@@ -186,18 +189,19 @@ def loss_fn(
         mutated_vars = None
 
     # Compute the loss and metrics.
-    metrics = compute_training_metrics(deltas_pred, labels_pred, batch, loss_weights)
+    metrics = compute_training_metrics(deltas_pred, labels_pred, batch, dilation_iterations, loss_weights)
     loss = metrics['loss']
     aux = (metrics, mutated_vars)
 
     return loss, aux
 
 
-@jit
+@partial(jit, static_argnums=3)
 def train_step(
         state: TrainState,
         batch: Dict[str, jnp.ndarray],
         key: Optional[jnp.ndarray],
+        dilation_iterations: int,
         loss_weights: Dict[str, float]
 ) -> Tuple[TrainState, Dict[str, jnp.ndarray]]:
 
@@ -211,6 +215,8 @@ def train_step(
         Dictionary containing the input images and target arrays.
     key : Optional[jnp.ndarray]
         Random Key used for dropout.
+    dilation_iterations : int
+        Number of iterations used to dilate ground truth labels.
     loss_weights : Dict[str, float]
         Weights for terms in the overall loss function.
 
@@ -226,7 +232,8 @@ def train_step(
     grad_fn = value_and_grad(loss_fn, has_aux=True)
 
     # Compute gradients and update parameters.
-    (_, (metrics, mutated_vars)), grads = grad_fn(state.params, state.batch_stats, batch, key, loss_weights, train=True)
+    (_, (metrics, mutated_vars)), grads = \
+        grad_fn(state.params, state.batch_stats, batch, key, dilation_iterations, loss_weights, train=True)
     state = state.apply_gradients(grads=grads, batch_stats=mutated_vars['batch_stats'])
 
     return state, metrics
@@ -235,10 +242,11 @@ def train_step(
 def train_epoch(
         state: TrainState,
         dataset: Dict,
-        batch_size: int,
-        loss_weights: Dict[str, float],
-        epoch_learning_rate: float,
         input_size: Tuple[int, int],
+        batch_size: int,
+        epoch_learning_rate: float,
+        dilation_iterations: int,
+        loss_weights: Dict[str, float],
         coords_max_length: int
 ) -> Tuple[TrainState, List[Dict[str, float]], Dict[str, float]]:
 
@@ -250,14 +258,17 @@ def train_epoch(
         Current train state.
     dataset : Dict
         Dataset dictionary.
-    batch_size : int
-        Batch size for training.
-    loss_weights : Dict[str, float]
-        Weights for terms in the overall loss function.
-    epoch_learning_rate : float
-        Learning rate for the current epoch.
     input_size : Tuple[int, int]
         Size of the input images used for training.
+    batch_size : int
+        Batch size for training.
+    epoch_learning_rate : float
+        Learning rate for the current epoch.
+    dilation_iterations : int
+        Number of iterations to dilate ground truth labels to minimize class imbalance misclassifications due to minor
+        offsets.
+    loss_weights : Dict[str, float]
+        Weights for terms in the overall loss function.
     coords_max_length : int
         Maximum length of the coordinates sequence.
 
@@ -301,10 +312,10 @@ def train_epoch(
 
         # Extract and transform the current training batch.
         train_batch = {k: v[perm] for k, v in train_ds.items()}
-        train_batch = transform_batch(train_batch, coords_max_length)
+        train_batch = transform_batch(train_batch, coords_max_length, dilation_iterations)
 
         # Perform a training step and update metrics.
-        state, metrics = train_step(state, train_batch, subkeys[2], loss_weights)
+        state, metrics = train_step(state, train_batch, subkeys[2], dilation_iterations, loss_weights)
         metrics = {k: float(v) for k, v in metrics.items()}
         batch_metrics.append(metrics)
 
@@ -326,10 +337,11 @@ def train_epoch(
 
         # Extract and transform the current validation batch.
         val_batch = {k: v[i:i + 1] for k, v in valid_ds.items()}
-        val_batch = transform_batch(val_batch, coords_max_length)
+        val_batch = transform_batch(val_batch, coords_max_length, dilation_iterations)
 
         # Compute and update validation metrics.
-        _, (val_metrics, _) = loss_fn(state.params, state.batch_stats, val_batch, None, loss_weights, train=False)
+        _, (val_metrics, _) = loss_fn(state.params, state.batch_stats, val_batch, None, dilation_iterations,
+                                      loss_weights, train=False)
         val_metrics = {f'val_{k}': float(v) for k, v in val_metrics.items()}
         val_batch_metrics.append(val_metrics)
 
@@ -369,6 +381,7 @@ def train_model(
         decay_epochs: int = 100,
         decay_rate: float = 0.5,
         decay_transition_epochs: int = 10,
+        dilation_iterations: int = 1,
         loss_weights: Optional[Dict[str, float]] = None
 ) -> None:
 
@@ -400,6 +413,9 @@ def train_model(
         Decay rate for learning rate scheduling. Default is 0.5.
     decay_transition_epochs : int, optional
         Number of epochs for each decay transition in learning rate scheduling. Default is 10.
+    dilation_iterations : int, optional
+        Number of iterations to dilate ground truth labels to minimize class imbalance and misclassifications due to
+        minor offsets. Default is 1.
     loss_weights : Optional[Dict[str, float]], optional
         Weights for terms in the overall loss function. Supported terms are 'rmse', 'bce', 'dice', and 'smoothf1'. If
         None, the loss weights {'rmse': 0.5, 'smoothf1': 1.0} will be used. Default is None.
@@ -488,8 +504,8 @@ def train_model(
     for epoch_learning_rate in learning_rate_schedule:
 
         # Train the model for a single epoch.
-        state, batch_metrics, epoch_metrics = \
-            train_epoch(state, dataset, batch_size, loss_weights, epoch_learning_rate, input_size, coords_max_length)
+        state, batch_metrics, epoch_metrics = train_epoch(state, dataset, input_size, batch_size, epoch_learning_rate,
+                                                          dilation_iterations, loss_weights, coords_max_length)
 
         # Update batch metrics and epoch metrics logs.
         batch_metrics_log += batch_metrics
@@ -510,7 +526,8 @@ def train_model(
             'batch_stats': state.batch_stats
         },
         'adjustment': adjustment,
-        'input_size': input_size
+        'input_size': input_size,
+        'dilation_iterations': dilation_iterations
     }
     bytes_model = serialization.to_bytes(model_dict)
     MODELS_DIR.mkdir(parents=True, exist_ok=True)

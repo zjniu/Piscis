@@ -232,7 +232,7 @@ def transform_batch(
     coords_pad_length : Optional[int], optional
         Padded length of the coordinates sequence. Default is None.
     dilation_iterations : int, optional
-        Number of label dilation iterations. Default is 1.
+        Number of iterations to dilate ground truth labels. Default is 1.
     """
 
     images = batch['images']
@@ -245,21 +245,15 @@ def transform_batch(
 
     # Dilate labels if necessary.
     if dilation_iterations > 0:
-        dilated_labels = []
         structure = np.ones((3, 3, 1), dtype=bool)
-        for label in labels:
-            dilated_label = ndimage.binary_dilation(label, structure=structure, iterations=dilation_iterations)
-            dilated_labels.append(dilated_label)
-        dilated_labels = np.stack(dilated_labels)
-    else:
-        dilated_labels = labels
+        for i, label in enumerate(labels):
+            labels[i] = ndimage.binary_dilation(label, structure=structure, iterations=dilation_iterations)
 
     # Create the transformed batch dictionary.
     transformed_batch = {
         'images': images,
         'deltas': deltas,
-        'labels': labels,
-        'dilated_labels': dilated_labels
+        'labels': labels
     }
 
     return transformed_batch

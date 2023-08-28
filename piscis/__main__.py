@@ -26,10 +26,9 @@ def main():
     predict_parser.add_argument('--batch-size', type=int, default=4, help="Batch size for the CNN.")
     predict_parser.add_argument('--stack', action='store_true', help="Whether the input is a stack of images.")
     predict_parser.add_argument('--scale', type=float, default=1.0, help="Scale factor for rescaling the input.")
-    predict_parser.add_argument('--threshold', type=float, default=1.1,
+    predict_parser.add_argument('--threshold', type=float, default=2.0,
                                 help="Spot detection threshold. Can be interpreted as the minimum number of fully "
-                                     "confident pixels necessary to identify a spot. Typical values fall between 1 and "
-                                     "2. Default is 1.1."
+                                     "confident pixels necessary to identify a spot. Default is 2.0."
                                 )
     predict_parser.add_argument('--min-distance', type=int, default=1, help="Minimum distance between spots.")
 
@@ -55,16 +54,29 @@ def main():
     train_parser.add_argument('--decay-rate', type=float, default=0.5, help="Decay rate for learning rate scheduling.")
     train_parser.add_argument('--decay-transition-epochs', type=int, default=10,
                               help="Number of epochs for each decay transition in learning rate scheduling.")
-    train_parser.add_argument('--rmse-loss-weight', type=float, default=0.4, help="Weight for the rmse loss term.")
-    train_parser.add_argument('--bce-loss-weight', type=float, default=0.2, help="Weight for the bce loss term.")
-    train_parser.add_argument('--sf1-loss-weight', type=float, default=1.0, help="Weight for the sf1 loss term.")
+    train_parser.add_argument('--dilation-iterations', type=int, default=1,
+                              help="Number of iterations to dilate ground truth labels to minimize class imbalance and "
+                                   "misclassifications due to minor offsets.")
+    train_parser.add_argument('--rmse-loss-weight', type=float, default=0.5, help="Weight for the rmse loss term.")
+    train_parser.add_argument('--bce-loss-weight', type=float, default=0.0, help="Weight for the bce loss term.")
+    train_parser.add_argument('--dice-loss-weight', type=float, default=0.0, help="Weight for the dice loss term.")
+    train_parser.add_argument('--smoothf1-loss-weight', type=float, default=1.0,
+                              help="Weight for the smoothf1 loss term.")
 
     args = parser.parse_args()
 
     if args.command == 'train':
 
         # Create the loss weights dictionary.
-        loss_weights = {'rmse': args.rmse_loss_weight, 'bce': args.bce_loss_weight, 'sf1': args.sf1_loss_weight}
+        loss_weights = {}
+        if args.rmse_loss_weight > 0:
+            loss_weights['rmse'] = args.rmse_loss_weight
+        if args.bce_loss_weight > 0:
+            loss_weights['bce'] = args.bce_loss_weight
+        if args.dice_loss_weight > 0:
+            loss_weights['dice'] = args.dice_loss_weight
+        if args.smoothf1_loss_weight > 0:
+            loss_weights['smoothf1'] = args.smoothf1_loss_weight
 
         # Train the model.
         train_model(
@@ -80,6 +92,7 @@ def main():
             decay_epochs=args.decay_epochs,
             decay_rate=args.decay_rate,
             decay_transition_epochs=args.decay_transition_epochs,
+            dilation_iterations=args.dilation_iterations,
             loss_weights=loss_weights
         )
 

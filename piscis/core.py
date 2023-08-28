@@ -38,6 +38,8 @@ class Piscis:
         Adjustment type applied to images during preprocessing.
     input_size : Tuple[int, int]
         Input size for the CNN.
+    dilation_iterations : int
+        Number of iterations used to dilate ground truth labels during training.
     _jitted : Callable
         Compiled model apply function.
     """
@@ -80,6 +82,7 @@ class Piscis:
                 input_size = model_dict['input_size']
                 input_size = (input_size['0'], input_size['1'])
             self.input_size = input_size
+            self.dilation_iterations = model_dict['dilation_iterations']
 
         # Define the jitted model apply function.
         @jit
@@ -88,7 +91,8 @@ class Piscis:
             x = jnp.expand_dims(x, axis=-1)
             deltas, labels = self.model.apply(self.variables, x, False)
             labels = labels[:, :, :, 0]
-            pooled_labels = utils.vmap_sum_pool(deltas, labels, (3, 3))
+            kernel_size = (2 * self.dilation_iterations + 1,) * 2
+            pooled_labels = utils.vmap_sum_pool(deltas, labels, kernel_size)
 
             return deltas, pooled_labels, labels
 
