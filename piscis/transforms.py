@@ -321,8 +321,8 @@ def normalize(
         Normalized image.
     """
 
-    image_lower = np.percentile(image, lower)
-    image_upper = np.percentile(image, upper)
+    image_lower = np.percentile(image, lower, axis=(-2, -1), keepdims=True)
+    image_upper = np.percentile(image, upper, axis=(-2, -1), keepdims=True)
     normalized_image = (image - image_lower) / (image_upper - image_lower + epsilon)
 
     return normalized_image
@@ -348,7 +348,9 @@ def standardize(
         Standardized image.
     """
 
-    standardized_image = (image - np.mean(image)) / (np.std(image) + epsilon)
+    image_mean = image.mean(axis=(-2, -1), keepdims=True)
+    image_std = image.std(axis=(-2, -1), keepdims=True)
+    standardized_image = (image - image_mean) / (image_std + epsilon)
 
     return standardized_image
 

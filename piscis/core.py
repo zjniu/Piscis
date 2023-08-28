@@ -386,12 +386,12 @@ class Piscis:
 
         # Standardize the input if necessary.
         if self.adjustment == 'normalize':
-            x_min = np.min(x, axis=(-2, -1))[..., None, None].compute()
-            x_max = np.max(x, axis=(-2, -1))[..., None, None].compute()
+            x_min = x.min(axis=(-2, -1), keepdims=True).compute()
+            x_max = x.max(axis=(-2, -1), keepdims=True).compute()
             x_stats = (x_min, x_max)
         elif self.adjustment == 'standardize':
-            x_mean = np.mean(x, axis=(-2, -1))[..., None, None].compute()
-            x_std = np.std(x, axis=(-2, -1))[..., None, None].compute()
+            x_mean = x.mean(axis=(-2, -1), keepdims=True).compute()
+            x_std = x.std(axis=(-2, -1), keepdims=True).compute()
             x_stats = (x_mean, x_std)
         else:
             x_stats = None
