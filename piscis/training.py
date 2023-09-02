@@ -375,7 +375,7 @@ def train_model(
         input_size: Tuple[int, int] = (256, 256),
         random_seed: int = 0,
         batch_size: int = 4,
-        learning_rate: float = 0.1,
+        learning_rate: float = 0.05,
         epochs: int = 200,
         warmup_epochs: int = 10,
         decay_epochs: int = 100,
@@ -402,7 +402,7 @@ def train_model(
     batch_size : int, optional
         Batch size for training. Default is 4.
     learning_rate : float, optional
-        Learning rate for the optimizer. Default is 0.1.
+        Learning rate for the optimizer. Default is 0.05.
     epochs : int, optional
         Number of epochs to train the model for. Default is 200.
     warmup_epochs : int, optional
@@ -418,7 +418,7 @@ def train_model(
         minor offsets. Default is 1.
     loss_weights : Optional[Dict[str, float]], optional
         Weights for terms in the overall loss function. Supported terms are 'rmse', 'bce', 'dice', and 'smoothf1'. If
-        None, the loss weights {'rmse': 0.5, 'smoothf1': 1.0} will be used. Default is None.
+        None, the loss weights {'rmse': 1.0, 'smoothf1': 1.0} will be used. Default is None.
 
     Raises
     ------
@@ -451,7 +451,7 @@ def train_model(
 
     # Default loss weights.
     if loss_weights is None:
-        loss_weights = {'rmse': 0.5, 'smoothf1': 1.0}
+        loss_weights = {'rmse': 1.0, 'smoothf1': 1.0}
 
     # Define directories for storing checkpoints and the model.
     checkpoint_path = CHECKPOINTS_DIR / model_name

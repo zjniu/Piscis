@@ -45,7 +45,7 @@ def main():
     train_parser.add_argument('--random-seed', type=int, default=0,
                               help="Random seed used for initialization and training.")
     train_parser.add_argument('--batch-size', type=int, default=4, help="Batch size for training.")
-    train_parser.add_argument('--learning-rate', type=float, default=0.1, help="Learning rate for the optimizer.")
+    train_parser.add_argument('--learning-rate', type=float, default=0.05, help="Learning rate for the optimizer.")
     train_parser.add_argument('--epochs', type=int, default=200, help="Number of epochs to train the model for.")
     train_parser.add_argument('--warmup-epochs', type=int, default=10,
                               help="Number of warmup epochs for learning rate scheduling.")
@@ -57,7 +57,7 @@ def main():
     train_parser.add_argument('--dilation-iterations', type=int, default=1,
                               help="Number of iterations to dilate ground truth labels to minimize class imbalance and "
                                    "misclassifications due to minor offsets.")
-    train_parser.add_argument('--rmse-loss-weight', type=float, default=0.5, help="Weight for the rmse loss term.")
+    train_parser.add_argument('--rmse-loss-weight', type=float, default=1.0, help="Weight for the rmse loss term.")
     train_parser.add_argument('--bce-loss-weight', type=float, default=0.0, help="Weight for the bce loss term.")
     train_parser.add_argument('--dice-loss-weight', type=float, default=0.0, help="Weight for the dice loss term.")
     train_parser.add_argument('--smoothf1-loss-weight', type=float, default=1.0,
