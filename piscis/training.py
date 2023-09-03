@@ -418,7 +418,7 @@ def train_model(
         minor offsets. Default is 1.
     loss_weights : Optional[Dict[str, float]], optional
         Weights for terms in the overall loss function. Supported terms are 'rmse', 'bce', 'dice', and 'smoothf1'. If
-        None, the loss weights {'rmse': 1.0, 'smoothf1': 1.0} will be used. Default is None.
+        None, the loss weights {'rmse': 0.5, 'smoothf1': 1.0} will be used. Default is None.
 
     Raises
     ------
@@ -451,7 +451,7 @@ def train_model(
 
     # Default loss weights.
     if loss_weights is None:
-        loss_weights = {'rmse': 1.0, 'smoothf1': 1.0}
+        loss_weights = {'rmse': 0.5, 'smoothf1': 1.0}
 
     # Define directories for storing checkpoints and the model.
     checkpoint_path = CHECKPOINTS_DIR / model_name
