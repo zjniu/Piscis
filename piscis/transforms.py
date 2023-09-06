@@ -413,7 +413,6 @@ def subpixel_distance_transform(
         # Create labels array.
         unpadded_rounded_coords = np.rint(coord).astype(int)
         labels[i][unpadded_rounded_coords[:, 0], unpadded_rounded_coords[:, 1]] = True
-        rounded_coords[i] = np.pad(unpadded_rounded_coords, padding, constant_values=-1)
 
         # Create Euclidean distance transform indices array.
         edt_indices[i] = ndimage.distance_transform_edt(~labels[i], return_distances=False, return_indices=True,
@@ -421,7 +420,7 @@ def subpixel_distance_transform(
 
     # Prepare inputs for the vectorized distance transform function.
     labels = np.expand_dims(labels, -1)
-    inputs = [subpixel_coords, rounded_coords, edt_indices, dy, dx]
+    inputs = [subpixel_coords, edt_indices, dy, dx]
 
     # Apply the vectorized distance transform function.
     deltas, nearest = vmap_sdt(inputs, np.arange(output_size[0]), np.arange(output_size[1]))
@@ -431,7 +430,7 @@ def subpixel_distance_transform(
 
 @jit
 def _sdt(
-        inputs: Tuple[np.ndarray, np.ndarray, np.ndarray, float, float],
+        inputs: Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray],
         i: int,
         j: int
 ):
@@ -440,7 +439,7 @@ def _sdt(
 
     Parameters
     ----------
-    inputs : Tuple[np.ndarray, np.ndarray, np.ndarray, float, float]
+    inputs : Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]
         Tuple of inputs.
     i : int
         Pixel row index.
@@ -455,9 +454,9 @@ def _sdt(
         Index of the nearest point.
     """
 
-    subpixel_coords, rounded_coords, edt_indices, dy, dx = inputs
-    nearest = jnp.where(jnp.all(rounded_coords == edt_indices[:, i, j], axis=1)[:, None], subpixel_coords, 0)
-    nearest = jnp.sum(nearest, axis=0)
+    subpixel_coords, edt_index, dy, dx = inputs
+    distances = jnp.linalg.norm(subpixel_coords - edt_index, axis=-1)
+    nearest = subpixel_coords[jnp.argmin(distances)]
     delta_y = dy * (nearest[0] - i)
     delta_x = dx * (nearest[1] - j)
     delta = jnp.stack((delta_y, delta_x), axis=-1)
@@ -465,5 +464,5 @@ def _sdt(
     return delta, nearest
 
 
-vmap_sdt = vmap(vmap(vmap(_sdt, in_axes=(None, None, 0)), in_axes=(None, 0, None)),
-                in_axes=([0, 0, 0, None, None], None, None))
+vmap_sdt = vmap(vmap(vmap(_sdt, in_axes=([None, 1, None, None], None, 0)), in_axes=([None, 1, None, None], 0, None)),
+                in_axes=([0, 0, None, None], None, None))
