@@ -27,6 +27,8 @@ class BatchConvStyle(nn.Module):
         Convolution module.
     dense : ModuleDef
         Dense module.
+    dropout : ModuleDef
+        Dropout module.
     bn : ModuleDef
         Batch norm module.
     act : Callable
@@ -37,6 +39,7 @@ class BatchConvStyle(nn.Module):
     kernel_size: Sequence[int]
     conv: ModuleDef
     dense: ModuleDef
+    dropout: ModuleDef
     bn: ModuleDef
     act: Callable
 
@@ -58,6 +61,7 @@ class BatchConvStyle(nn.Module):
         )
 
         if y is not None:
+            x = self.dropout()(x)
             x = x + y
 
         if style is not None:
@@ -87,6 +91,8 @@ class UpConv(nn.Module):
         Convolution module.
     dense : ModuleDef
         Dense module.
+    dropout : ModuleDef
+        Dropout module.
     bn : ModuleDef
         Batch norm module.
     act : Callable
@@ -97,6 +103,7 @@ class UpConv(nn.Module):
     kernel_size: Sequence[int]
     conv: ModuleDef
     dense: ModuleDef
+    dropout: ModuleDef
     bn: ModuleDef
     act: Callable
 
@@ -123,6 +130,7 @@ class UpConv(nn.Module):
             kernel_size=self.kernel_size,
             conv=self.conv,
             dense=self.dense,
+            dropout=self.dropout,
             bn=self.bn,
             act=self.act
         )
@@ -170,6 +178,8 @@ class Decoder(nn.Module):
         Convolution module.
     dense : ModuleDef
         Dense module.
+    dropout : ModuleDef
+        Dropout module.
     bn : ModuleDef
         Batch norm module.
     act : Callable
@@ -180,6 +190,7 @@ class Decoder(nn.Module):
     aggregate: str
     conv: ModuleDef
     dense: ModuleDef
+    dropout: ModuleDef
     bn: ModuleDef
     act: Callable
 
@@ -195,6 +206,7 @@ class Decoder(nn.Module):
             kernel_size=self.kernel_size,
             conv=self.conv,
             dense=self.dense,
+            dropout=self.dropout,
             bn=self.bn,
             act=self.act
         )
@@ -253,6 +265,8 @@ class FPN(nn.Module):
         Whether to use style transfer.
     aggregate : str
         Aggregation mode for feature maps. Supported modes are 'sum' and 'concatenate'.
+    dropout_rate : float
+        Dropout rate at skip connections.
     bn_momentum : float
         Momentum parameter for batch norm layers.
     bn_epsilon : float
@@ -273,10 +287,12 @@ class FPN(nn.Module):
     kernel_size: Sequence[int] = (3, 3)
     style: bool = True
     aggregate: str = 'sum'
+    dropout_rate: float = 0.2
     bn_momentum: float = 0.9
     bn_epsilon: float = 1e-05
     conv: ModuleDef = nn.Conv
     dense: ModuleDef = nn.Dense
+    dropout: ModuleDef = nn.Dropout
     bn: ModuleDef = nn.BatchNorm
     act: Callable = nn.swish
 
@@ -286,6 +302,12 @@ class FPN(nn.Module):
             x: jnp.ndarray,
             train: bool = True
     ) -> Tuple[jnp.ndarray, Optional[jnp.ndarray]]:
+
+        dropout = partial(
+            self.dropout,
+            rate=self.dropout_rate,
+            deterministic=not train
+        )
 
         bn = partial(
             self.bn,
@@ -300,6 +322,7 @@ class FPN(nn.Module):
             aggregate=self.aggregate,
             conv=self.conv,
             dense=self.dense,
+            dropout=dropout,
             bn=bn,
             act=self.act
         )

@@ -50,15 +50,6 @@ blocks_args = [
     }
 ]
 
-EfficientNetV2XS = build_efficientnetv2(
-    blocks_args=blocks_args,
-    model_name='EfficientNetV2XS',
-    width_coefficient=1.0,
-    depth_coefficient=1.0,
-    stem_strides=1,
-    dropout_rate=0.2
-)
-
 
 class SpotsModel(nn.Module):
 
@@ -70,10 +61,13 @@ class SpotsModel(nn.Module):
         Whether to use style transfer.
     aggregate : str
         Aggregation mode for the feature pyramid network. Supported modes are 'sum' and 'concatenate'.
+    dropout_rate : float
+        Dropout rate at skip connections.
     """
 
     style: bool = True
     aggregate: str = 'sum'
+    dropout_rate: float = 0.2
 
     @nn.compact
     def __call__(
@@ -83,12 +77,22 @@ class SpotsModel(nn.Module):
             return_style: bool = False
     ) -> Union[Tuple[jnp.ndarray, jnp.ndarray], Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]]:
 
+        encoder = build_efficientnetv2(
+            blocks_args=blocks_args,
+            model_name='EfficientNetV2XS',
+            width_coefficient=1.0,
+            depth_coefficient=1.0,
+            stem_strides=1,
+            dropout_rate=self.dropout_rate
+        )
+
         x, style = FPN(
-            encoder=EfficientNetV2XS,
+            encoder=encoder,
             encoder_levels={0, 1, 2, 3},
             features=3,
             style=self.style,
-            aggregate=self.aggregate
+            aggregate=self.aggregate,
+            dropout_rate=self.dropout_rate
         )(x, train=train)
         deltas = x[:, :, :, :2]
         labels = nn.sigmoid(x[:, :, :, 2:3])
