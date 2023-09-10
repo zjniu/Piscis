@@ -45,7 +45,7 @@ def main():
     train_parser.add_argument('--random-seed', type=int, default=0,
                               help="Random seed used for initialization and training.")
     train_parser.add_argument('--batch-size', type=int, default=4, help="Batch size for training.")
-    train_parser.add_argument('--learning-rate', type=float, default=0.05, help="Learning rate for the optimizer.")
+    train_parser.add_argument('--learning-rate', type=float, default=0.1, help="Learning rate for the optimizer.")
     train_parser.add_argument('--epochs', type=int, default=200, help="Number of epochs to train the model for.")
     train_parser.add_argument('--warmup-epochs', type=int, default=10,
                               help="Number of warmup epochs for learning rate scheduling.")

@@ -375,7 +375,7 @@ def train_model(
         input_size: Tuple[int, int] = (256, 256),
         random_seed: int = 0,
         batch_size: int = 4,
-        learning_rate: float = 0.05,
+        learning_rate: float = 0.1,
         epochs: int = 200,
         warmup_epochs: int = 10,
         decay_epochs: int = 100,
@@ -402,7 +402,7 @@ def train_model(
     batch_size : int, optional
         Batch size for training. Default is 4.
     learning_rate : float, optional
-        Learning rate for the optimizer. Default is 0.05.
+        Learning rate for the optimizer. Default is 0.1.
     epochs : int, optional
         Number of epochs to train the model for. Default is 200.
     warmup_epochs : int, optional
