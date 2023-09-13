@@ -397,7 +397,6 @@ def subpixel_distance_transform(
     if (coords_pad_length is None) or (coords_pad_length < max_num_coords):
         coords_pad_length = max_num_coords
     subpixel_coords = np.zeros((batch_size, coords_pad_length, 2))
-    rounded_coords = np.zeros((batch_size, coords_pad_length, 2), dtype=int)
     edt_indices = np.zeros((batch_size, 2) + output_size, dtype=int)
 
     for i, coord in enumerate(coords):
