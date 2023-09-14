@@ -105,7 +105,7 @@ class Piscis:
             x: Union[np.ndarray, da.Array],
             stack: bool = False,
             scale: float = 1.0,
-            threshold: float = 2.0,
+            threshold: float = 1.0,
             min_distance: int = 1,
             intermediates: bool = False
     ) -> Union[Tuple[np.ndarray, xr.DataArray], np.ndarray]:
@@ -122,7 +122,7 @@ class Piscis:
             Scale factor for rescaling `x`. Default is 1.
         threshold : float, optional
             Spot detection threshold. Can be interpreted as the minimum number of fully confident pixels necessary to
-            identify a spot. Default is 2.0.
+            identify a spot. Default is 1.0.
         min_distance : int, optional
             Minimum distance between spots. Default is 1.
         intermediates : bool, optional
@@ -486,7 +486,7 @@ class Piscis:
 
 def adjust_parameters(
         y: xr.DataArray,
-        threshold: float = 2.0,
+        threshold: float = 1.0,
         min_distance: int = 1
 ):
     """Adjust tunable parameters for a given set of intermediate feature maps.
@@ -497,7 +497,7 @@ def adjust_parameters(
         Intermediate feature maps.
     threshold: float
         Spot detection threshold. Can be interpreted as the minimum number of fully confident pixels necessary to
-        identify a spot. Default is 2.0.
+        identify a spot. Default is 1.0.
     min_distance : int, optional
         Minimum distance between spots. Default is 1.
 

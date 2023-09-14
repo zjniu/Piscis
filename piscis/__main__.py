@@ -26,9 +26,9 @@ def main():
     predict_parser.add_argument('--batch-size', type=int, default=4, help="Batch size for the CNN.")
     predict_parser.add_argument('--stack', action='store_true', help="Whether the input is a stack of images.")
     predict_parser.add_argument('--scale', type=float, default=1.0, help="Scale factor for rescaling the input.")
-    predict_parser.add_argument('--threshold', type=float, default=2.0,
+    predict_parser.add_argument('--threshold', type=float, default=1.0,
                                 help="Spot detection threshold. Can be interpreted as the minimum number of fully "
-                                     "confident pixels necessary to identify a spot. Default is 2.0."
+                                     "confident pixels necessary to identify a spot."
                                 )
     predict_parser.add_argument('--min-distance', type=int, default=1, help="Minimum distance between spots.")
 
