@@ -376,11 +376,11 @@ def train_model(
         random_seed: int = 0,
         batch_size: int = 4,
         learning_rate: float = 0.1,
-        epochs: int = 200,
-        warmup_epochs: int = 10,
-        decay_epochs: int = 100,
-        decay_rate: float = 0.5,
-        decay_transition_epochs: int = 10,
+        epochs: int = 400,
+        warmup_fraction: float = 0.05,
+        decay_fraction: float = 0.5,
+        decay_transitions: int = 10,
+        decay_factor: float = 0.5,
         dilation_iterations: int = 1,
         loss_weights: Optional[Dict[str, float]] = None
 ) -> None:
@@ -404,15 +404,15 @@ def train_model(
     learning_rate : float, optional
         Learning rate for the optimizer. Default is 0.1.
     epochs : int, optional
-        Number of epochs to train the model for. Default is 200.
-    warmup_epochs : int, optional
-        Number of warmup epochs for learning rate scheduling. Default is 10.
-    decay_epochs : int, optional
-        Number of decay epochs for learning rate scheduling. Default is 100.
-    decay_rate : float, optional
-        Decay rate for learning rate scheduling. Default is 0.5.
-    decay_transition_epochs : int, optional
-        Number of epochs for each decay transition in learning rate scheduling. Default is 10.
+        Number of epochs to train the model for. Default is 400.
+    warmup_fraction : float, optional
+        Fraction of epochs for learning rate warmup. Default is 0.05.
+    decay_fraction : float, optional
+        Fraction of epochs for learning rate decay. Default is 0.5.
+    decay_transitions : int, optional
+        Number of times to decay the learning rate. Default is 10.
+    decay_factor : float, optional
+        Multiplicative factor of each learning rate decay transition. Default is 0.5.
     dilation_iterations : int, optional
         Number of iterations to dilate ground truth labels to minimize class imbalance and misclassifications due to
         minor offsets. Default is 1.
@@ -423,11 +423,11 @@ def train_model(
     Raises
     ------
     ValueError
-        If warmup_epochs + decay_epochs is greater than epochs.
+        If warmup_fraction + decay_fraction is greater than 1.
     """
 
-    if warmup_epochs + decay_epochs > epochs:
-        raise ValueError("warmup_epochs + decay_epochs cannot be greater than epochs.")
+    if warmup_fraction + decay_fraction > 1:
+        raise ValueError("warmup_fraction + decay_fraction cannot be greater 1.")
 
     # Load datasets.
     print('Loading datasets...')
@@ -440,9 +440,12 @@ def train_model(
     key = random.PRNGKey(random_seed)
 
     # Create the learning rate schedule.
+    warmup_epochs = round(warmup_fraction * epochs)
+    decay_epochs = round(decay_fraction * epochs)
+    decay_transition_epochs = np.ceil(decay_epochs / decay_transitions).astype(int)
     warmup = [learning_rate * i / warmup_epochs for i in range(warmup_epochs)]
     constant = [learning_rate] * (epochs - warmup_epochs - decay_epochs)
-    decay = [learning_rate * decay_rate ** np.ceil(i / decay_transition_epochs) for i in range(1, decay_epochs + 1)]
+    decay = [learning_rate * decay_factor ** np.ceil(i / decay_transition_epochs) for i in range(1, decay_epochs + 1)]
     learning_rate_schedule = warmup + constant + decay
 
     # Create the optimizer.

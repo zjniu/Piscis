@@ -46,14 +46,14 @@ def main():
                               help="Random seed used for initialization and training.")
     train_parser.add_argument('--batch-size', type=int, default=4, help="Batch size for training.")
     train_parser.add_argument('--learning-rate', type=float, default=0.1, help="Learning rate for the optimizer.")
-    train_parser.add_argument('--epochs', type=int, default=200, help="Number of epochs to train the model for.")
-    train_parser.add_argument('--warmup-epochs', type=int, default=10,
-                              help="Number of warmup epochs for learning rate scheduling.")
-    train_parser.add_argument('--decay-epochs', type=int, default=100,
-                              help="Number of decay epochs for learning rate scheduling.")
-    train_parser.add_argument('--decay-rate', type=float, default=0.5, help="Decay rate for learning rate scheduling.")
-    train_parser.add_argument('--decay-transition-epochs', type=int, default=10,
-                              help="Number of epochs for each decay transition in learning rate scheduling.")
+    train_parser.add_argument('--epochs', type=int, default=300, help="Number of epochs to train the model for.")
+    train_parser.add_argument('--warmup-fraction', type=float, default=0.05,
+                              help="Fraction of epochs for learning rate warmup. Default is 0.05.")
+    train_parser.add_argument('--decay-fraction', type=float, default=0.5,
+                              help="Fraction of epochs for learning rate decay.")
+    train_parser.add_argument('--decay-transitions', type=int, default=10, help="Number of times to decay the learning rate.")
+    train_parser.add_argument('--decay-factor', type=float, default=0.5,
+                              help="Multiplicative factor of each learning rate decay transition.")
     train_parser.add_argument('--dilation-iterations', type=int, default=1,
                               help="Number of iterations to dilate ground truth labels to minimize class imbalance and "
                                    "misclassifications due to minor offsets.")
@@ -88,10 +88,10 @@ def main():
             batch_size=args.batch_size,
             learning_rate=args.learning_rate,
             epochs=args.epochs,
-            warmup_epochs=args.warmup_epochs,
-            decay_epochs=args.decay_epochs,
-            decay_rate=args.decay_rate,
-            decay_transition_epochs=args.decay_transition_epochs,
+            warmup_fraction=args.warmup_fraction,
+            decay_fraction=args.decay_fraction,
+            decay_transitions=args.decay_transitions,
+            decay_factor=args.decay_factor,
             dilation_iterations=args.dilation_iterations,
             loss_weights=loss_weights
         )
