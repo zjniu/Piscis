@@ -12,7 +12,7 @@ from functools import partial
 from jax import jit
 from jax.lib import xla_bridge
 from skimage.transform import resize
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, Optional, Sequence, Tuple, Union
 
 from piscis import utils
 from piscis.downloads import download_pretrained_model
@@ -40,7 +40,7 @@ class Piscis:
         Input size for the CNN.
     dilation_iterations : int
         Number of iterations used to dilate ground truth labels during training.
-    _jitted : Callable
+    apply : Callable
         Compiled model apply function.
     """
 
@@ -70,7 +70,6 @@ class Piscis:
         # Load the model.
         self.model_name = model_name
         self.batch_size = batch_size
-        self.model = SpotsModel()
         model_path = MODELS_DIR / model_name
         if not model_path.is_file():
             download_pretrained_model(model_name)
@@ -84,21 +83,9 @@ class Piscis:
             self.input_size = input_size
             self.dilation_iterations = model_dict['dilation_iterations']
 
-        # Define the jitted model apply function.
-        @jit
-        def jitted(x):
-
-            x = jnp.expand_dims(x, axis=-1)
-            deltas, labels = self.model.apply(self.variables, x, False)
-            labels = labels[:, :, :, 0]
-            kernel_size = (2 * self.dilation_iterations + 1,) * 2
-            pooled_labels = utils.vmap_sum_pool(deltas, labels, kernel_size)
-
-            return deltas, pooled_labels, labels
-
-        # Compile the model apply function.
-        jitted(jnp.zeros((self.batch_size, *self.input_size)))
-        self._jitted = jitted
+        # Define the model apply function.
+        kernel_size = (2 * self.dilation_iterations + 1,) * 2
+        self.apply = partial(apply, variables=self.variables, kernel_size=kernel_size)
 
     def predict(
             self,
@@ -432,13 +419,13 @@ class Piscis:
 
         # Run the jitted model apply function on tiles.
         if intermediates:
-            deltas, pooled_labels, labels = self._jitted(tiles)
+            deltas, pooled_labels, labels = self.apply(tiles)
             deltas = np.asarray(deltas)
             pooled_labels = np.asarray(pooled_labels)
             labels = np.asarray(labels)
             return deltas, pooled_labels, labels
         else:
-            deltas, pooled_labels, _ = self._jitted(tiles)
+            deltas, pooled_labels, _ = self.apply(tiles)
             deltas = np.asarray(deltas)
             pooled_labels = np.asarray(pooled_labels)
             return deltas, pooled_labels
@@ -484,11 +471,45 @@ class Piscis:
         return coords
 
 
+@partial(jit, static_argnums=2)
+def apply(
+        x: jnp.ndarray,
+        variables: Dict,
+        kernel_size: Sequence[int]
+) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+
+    """Apply SpotsModel to a batch images.
+
+    x : jnp.ndarray
+        Batch of images.
+    variables : Dict
+        Model variables.
+    kernel_size : Sequence[int]
+        Kernel size or window size of the sum pooling operation.
+
+    Returns
+    -------
+    deltas : jnp.ndarray
+        Predicted subpixel displacements.
+    pooled_labels : jnp.ndarray
+        Predicted pooled labels.
+    labels : jnp.ndarray
+        Predicted binary labels.
+    """
+
+    x = jnp.expand_dims(x, axis=-1)
+    deltas, labels = SpotsModel().apply(variables, x, False)
+    labels = labels[:, :, :, 0]
+    pooled_labels = utils.vmap_sum_pool(deltas, labels, kernel_size)
+
+    return deltas, pooled_labels, labels
+
+
 def adjust_parameters(
         y: xr.DataArray,
         threshold: float = 1.0,
         min_distance: int = 1
-):
+) -> np.ndarray:
     """Adjust tunable parameters for a given set of intermediate feature maps.
 
     Parameters
