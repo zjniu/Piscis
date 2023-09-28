@@ -10,6 +10,7 @@ from deeptile.extensions import stitch
 from flax import serialization
 from functools import partial
 from jax import jit
+from jax._src import compilation_cache
 from jax.lib import xla_bridge
 from skimage.transform import resize
 from typing import Dict, Optional, Sequence, Tuple, Union
@@ -17,7 +18,7 @@ from typing import Dict, Optional, Sequence, Tuple, Union
 from piscis import utils
 from piscis.downloads import download_pretrained_model
 from piscis.models.spots import SpotsModel
-from piscis.paths import MODELS_DIR
+from piscis.paths import CACHE_DIR, MODELS_DIR
 
 
 class Piscis:
@@ -48,6 +49,7 @@ class Piscis:
             self,
             model_name: str = '20230709',
             batch_size: int = 4,
+            cache: bool = True,
             input_size: Optional[Tuple[int, int]] = None
     ) -> None:
 
@@ -59,6 +61,8 @@ class Piscis:
             Model name. Default is '20230709'.
         batch_size : int, optional
             Batch size for the CNN. Default is 4.
+        cache : bool, optional
+            Whether to use compilation cache. Default is True.
         input_size : Optional[Tuple[int, int]], optional
             Input size for the CNN. If None, it is obtained from the model dictionary. Default is None.
         """
@@ -66,6 +70,10 @@ class Piscis:
         # Set the batch size to 1 if running on CPU.
         if xla_bridge.get_backend().platform == 'cpu':
             batch_size = 1
+
+        # Initialize the compilation cache.
+        if cache:
+            compilation_cache.initialize_cache(CACHE_DIR)
 
         # Load the model.
         self.model_name = model_name
