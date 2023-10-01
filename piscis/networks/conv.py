@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 
 from flax import linen as nn
@@ -35,7 +36,7 @@ class Conv(nn.Module):
     layers: Sequence[str]
 
     @nn.compact
-    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
+    def __call__(self, x: jax.Array) -> jax.Array:
 
         conv = partial(
             self.conv,
@@ -100,7 +101,7 @@ class MBConv(nn.Module):
     act: Callable
 
     @nn.compact
-    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
+    def __call__(self, x: jax.Array) -> jax.Array:
 
         conv = partial(
             self.conv,
@@ -227,7 +228,7 @@ class FusedMBConv(nn.Module):
     act: Callable
 
     @nn.compact
-    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
+    def __call__(self, x: jax.Array) -> jax.Array:
 
         conv = partial(
             self.conv,

@@ -1,5 +1,5 @@
 import deeptile
-import jax.numpy as jnp
+import jax
 import numpy as np
 
 from jax import random
@@ -15,7 +15,7 @@ def generate_dataset(
         path: str,
         images: List[np.ndarray],
         coords: List[np.ndarray],
-        key: jnp.ndarray,
+        key: jax.Array,
         tile_size: Tuple[int, int] = (256, 256),
         min_spots: int = 1,
         train_size: float = 0.70,
@@ -32,7 +32,7 @@ def generate_dataset(
         List of images.
     coords : List[np.ndarray]
         List of ground truth spot coordinates.
-    key : jnp.ndarray
+    key : jax.Array
         Random key used for splitting the dataset into training, validation, and test sets.
     tile_size : Tuple[int, int], optional
         Tile size used for splitting images. Default is (256, 256).
@@ -160,7 +160,7 @@ def transform_subdataset(
         subds: Dict,
         input_size: Tuple[int, int],
         min_spots: int = 1,
-        key: Optional[jnp.ndarray] = None
+        key: Optional[jax.Array] = None
 ) -> Dict:
 
     """Transform subdataset for model training and validation.
@@ -173,7 +173,7 @@ def transform_subdataset(
         Size of the input images used during training.
     min_spots : int, optional
         Minimum number of spots per image. Default is 1.
-    key : Optional[jnp.ndarray], optional
+    key : Optional[jax.Array], optional
         Random key used for data augmentation. Default is None.
 
     Returns

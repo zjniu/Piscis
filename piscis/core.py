@@ -1,5 +1,6 @@
 import dask.array as da
 import deeptile
+import jax
 import jax.numpy as jnp
 import numpy as np
 import xarray as xr
@@ -481,14 +482,14 @@ class Piscis:
 
 @partial(jit, static_argnums=2)
 def apply(
-        x: jnp.ndarray,
+        x: jax.Array,
         variables: Dict,
         kernel_size: Sequence[int]
-) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+) -> Tuple[jax.Array, jax.Array, jax.Array]:
 
     """Apply SpotsModel to a batch images.
 
-    x : jnp.ndarray
+    x : jax.Array
         Batch of images.
     variables : Dict
         Model variables.
@@ -497,11 +498,11 @@ def apply(
 
     Returns
     -------
-    deltas : jnp.ndarray
+    deltas : jax.Array
         Predicted subpixel displacements.
-    pooled_labels : jnp.ndarray
+    pooled_labels : jax.Array
         Predicted pooled labels.
-    labels : jnp.ndarray
+    labels : jax.Array
         Predicted binary labels.
     """
 

@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
@@ -40,7 +41,7 @@ class TrainState(train_state.TrainState, ABC):
 
 
 def create_train_state(
-        key: jnp.ndarray,
+        key: jax.Array,
         input_size: Tuple[int, int],
         tx: optax.GradientTransformation,
         variables: Optional[Dict] = None
@@ -50,7 +51,7 @@ def create_train_state(
 
     Parameters
     ----------
-    key : jnp.ndarray
+    key : jax.Array
         Random key used for initialization and training.
     input_size : Tuple[int, int]
         Size of the input images used for training.
@@ -91,22 +92,22 @@ def create_train_state(
 
 
 def compute_training_metrics(
-        deltas_pred: jnp.ndarray,
-        labels_pred: jnp.ndarray,
-        batch: Dict[str, jnp.ndarray],
+        deltas_pred: jax.Array,
+        labels_pred: jax.Array,
+        batch: Dict[str, jax.Array],
         dilation_iterations: int,
         loss_weights: Dict[str, float]
-) -> Dict[str, jnp.ndarray]:
+) -> Dict[str, jax.Array]:
 
     """Compute training metrics.
 
     Parameters
     ----------
-    deltas_pred : jnp.ndarray
+    deltas_pred : jax.Array
         Predicted subpixel displacements.
-    labels_pred : jnp.ndarray
+    labels_pred : jax.Array
         Predicted binary labels.
-    batch : Dict[str, jnp.ndarray]
+    batch : Dict[str, jax.Array]
         Dictionary containing the input image and target arrays.
     dilation_iterations : int
         Number of iterations used to dilate ground truth labels.
@@ -115,7 +116,7 @@ def compute_training_metrics(
 
     Returns
     -------
-    metrics : Dict[str, jnp.ndarray]
+    metrics : Dict[str, jax.Array]
         Dictionary containing the values of individual loss terms and the overall loss.
     """
 
@@ -143,12 +144,12 @@ def compute_training_metrics(
 def loss_fn(
         params: Any,
         batch_stats: Any,
-        batch: Dict[str, jnp.ndarray],
-        key: Optional[jnp.ndarray],
+        batch: Dict[str, jax.Array],
+        key: Optional[jax.Array],
         dilation_iterations: int,
         loss_weights: Dict[str, float],
         train: bool
-) -> Tuple[jnp.ndarray, Tuple[Dict[str, jnp.ndarray], Dict]]:
+) -> Tuple[jax.Array, Tuple[Dict[str, jax.Array], Dict]]:
 
     """Computes the loss and metrics for a given batch.
 
@@ -158,9 +159,9 @@ def loss_fn(
         Model parameters.
     batch_stats : Any
         Batch statistics used for normalization.
-    batch : Dict[str, jnp.ndarray]
+    batch : Dict[str, jax.Array]
         Dictionary containing the input images and target arrays.
-    key : Optional[jnp.ndarray]
+    key : Optional[jax.Array]
         Random Key used for dropout.
     dilation_iterations : int
         Number of iterations used to dilate ground truth labels.
@@ -171,9 +172,9 @@ def loss_fn(
 
     Returns
     -------
-    loss : jnp.ndarray
+    loss : jax.Array
         Overall loss value.
-    aux : Tuple[Dict[str, jnp.ndarray], Dict]
+    aux : Tuple[Dict[str, jax.Array], Dict]
         Auxiliary containing metrics and mutable state variables.
     """
 
@@ -199,11 +200,11 @@ def loss_fn(
 @partial(jit, static_argnums=3)
 def train_step(
         state: TrainState,
-        batch: Dict[str, jnp.ndarray],
-        key: Optional[jnp.ndarray],
+        batch: Dict[str, jax.Array],
+        key: Optional[jax.Array],
         dilation_iterations: int,
         loss_weights: Dict[str, float]
-) -> Tuple[TrainState, Dict[str, jnp.ndarray]]:
+) -> Tuple[TrainState, Dict[str, jax.Array]]:
 
     """Performs a single training step.
 
@@ -211,9 +212,9 @@ def train_step(
     ----------
     state : TrainState
         Current training state.
-    batch : Dict[str, jnp.ndarray]
+    batch : Dict[str, jax.Array]
         Dictionary containing the input images and target arrays.
-    key : Optional[jnp.ndarray]
+    key : Optional[jax.Array]
         Random Key used for dropout.
     dilation_iterations : int
         Number of iterations used to dilate ground truth labels.
@@ -224,7 +225,7 @@ def train_step(
     -------
     state : TrainState
         Updated training state.
-    metrics : Dict[str, jnp.ndarray]
+    metrics : Dict[str, jax.Array]
         Dictionary containing the values of individual loss terms and the overall loss.
     """
 

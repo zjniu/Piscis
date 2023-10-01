@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 
 from flax import linen as nn
@@ -46,10 +47,10 @@ class BatchConvStyle(nn.Module):
     @nn.compact
     def __call__(
             self,
-            style: Optional[jnp.ndarray],
-            x: jnp.ndarray,
-            y: Optional[jnp.ndarray] = None
-    ) -> jnp.ndarray:
+            style: Optional[jax.Array],
+            x: jax.Array,
+            y: Optional[jax.Array] = None
+    ) -> jax.Array:
 
         conv = partial(
             BatchActConv,
@@ -110,10 +111,10 @@ class UpConv(nn.Module):
     @nn.compact
     def __call__(
             self,
-            x: jnp.ndarray,
-            y: Optional[jnp.ndarray],
-            style: Optional[jnp.ndarray]
-    ) -> jnp.ndarray:
+            x: jax.Array,
+            y: Optional[jax.Array],
+            style: Optional[jax.Array]
+    ) -> jax.Array:
 
         conv = partial(
             BatchActConv,
@@ -156,7 +157,7 @@ class MakeStyle(nn.Module):
     """Style transfer module."""
 
     @nn.compact
-    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
+    def __call__(self, x: jax.Array) -> jax.Array:
 
         style = jnp.mean(x, axis=(1, 2))
         style = style / jnp.linalg.norm(style, axis=1, keepdims=True)
@@ -197,9 +198,9 @@ class Decoder(nn.Module):
     @nn.compact
     def __call__(
             self,
-            style: jnp.ndarray,
-            xd: Sequence[jnp.ndarray]
-    ) -> jnp.ndarray:
+            style: jax.Array,
+            xd: Sequence[jax.Array]
+    ) -> jax.Array:
 
         up = partial(
             UpConv,
@@ -299,9 +300,9 @@ class FPN(nn.Module):
     @nn.compact
     def __call__(
             self,
-            x: jnp.ndarray,
+            x: jax.Array,
             train: bool = True
-    ) -> Tuple[jnp.ndarray, Optional[jnp.ndarray]]:
+    ) -> Tuple[jax.Array, Optional[jax.Array]]:
 
         dropout = partial(
             self.dropout,
@@ -354,7 +355,7 @@ class FPN(nn.Module):
 
 
 def _interpolate(
-        x: jnp.ndarray,
+        x: jax.Array,
         scale: float,
         *args: Any,
         **kwargs: Any
@@ -364,7 +365,7 @@ def _interpolate(
 
     Parameters
     ----------
-    x : jnp.ndarray
+    x : jax.Array
         Feature maps.
     scale : float
         Scale factor.
@@ -375,7 +376,7 @@ def _interpolate(
 
     Returns
     -------
-    x : jnp.ndarray
+    x : jax.Array
         Interpolated feature maps.
     """
 

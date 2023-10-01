@@ -1,5 +1,5 @@
 import copy
-import jax.numpy as jnp
+import jax
 import math
 
 from flax import linen as nn
@@ -110,10 +110,10 @@ class EfficientNetV2(nn.Module):
     @nn.compact
     def __call__(
             self,
-            x: jnp.ndarray,
+            x: jax.Array,
             train: bool = True,
             capture_list: Optional[Sequence[int]] = None
-    ) -> Union[jnp.ndarray, Dict[int, jnp.ndarray]]:
+    ) -> Union[jax.Array, Dict[int, jax.Array]]:
 
         # Initialize capture list.
         captures = {}

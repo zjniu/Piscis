@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -63,19 +64,19 @@ def compute_spot_coordinates(
 
 
 def scanned_sum_pool(
-        deltas: jnp.ndarray,
-        labels: jnp.ndarray,
+        deltas: jax.Array,
+        labels: jax.Array,
         n_iter: int,
         kernel_size: Sequence[int] = (3, 3)
-) -> jnp.ndarray:
+) -> jax.Array:
 
     """Scanned version of `sum_pool`.
 
     Parameters
     ----------
-    deltas : jnp.ndarray
+    deltas : jax.Array
         Subpixel displacements.
-    labels : jnp.ndarray
+    labels : jax.Array
         Binary labels.
     n_iter : int
         Number of iterations.
@@ -84,7 +85,7 @@ def scanned_sum_pool(
 
     Returns
     -------
-    pooled_labels : jnp.ndarray
+    pooled_labels : jax.Array
         Pooled labels after sum pooling for `n_iter` iterations.
     """
 
@@ -97,25 +98,25 @@ vmap_scanned_sum_pool = vmap(scanned_sum_pool, in_axes=(0, 0, None, None))
 
 
 def _scanned_sum_pool(
-        deltas: jnp.ndarray,
-        pooled_labels: jnp.ndarray,
+        deltas: jax.Array,
+        pooled_labels: jax.Array,
         kernel_size: Sequence[int]
-) -> Tuple[jnp.ndarray, None]:
+) -> Tuple[jax.Array, None]:
 
     """Single iteration of `scanned_apply_deltas`.
 
     Parameters
     ----------
-    deltas : jnp.ndarray
+    deltas : jax.Array
         Subpixel displacements.
-    pooled_labels : jnp.ndarray
+    pooled_labels : jax.Array
         Pooled labels carried over from the previous iteration.
     kernel_size : Sequence[int]
         Kernel size or window size of the sum pooling operation.
 
     Returns
     -------
-    pooled_labels : jnp.ndarray
+    pooled_labels : jax.Array
         Pooled labels to carry to the next iteration.
     None
     """
@@ -126,25 +127,25 @@ def _scanned_sum_pool(
 
 
 def sum_pool(
-        deltas: jnp.ndarray,
-        labels: jnp.ndarray,
+        deltas: jax.Array,
+        labels: jax.Array,
         kernel_size: Sequence[int] = (3, 3)
-) -> jnp.ndarray:
+) -> jax.Array:
 
     """Sum pool labels using deltas.
 
     Parameters
     ----------
-    deltas : jnp.ndarray
+    deltas : jax.Array
         Subpixel displacements.
-    labels : jnp.ndarray
+    labels : jax.Array
         Binary labels.
     kernel_size : Sequence[int], optional
         Kernel size or window size of the sum pooling operation. Default is (3, 3).
 
     Returns
     -------
-    pooled_labels : jnp.ndarray
+    pooled_labels : jax.Array
         Pooled labels.
     """
 
@@ -170,31 +171,31 @@ vmap_sum_pool = vmap(sum_pool, in_axes=(0, 0, None))
 
 
 def _sum_convergent_labels(
-        convergence: jnp.ndarray,
-        labels: jnp.ndarray,
+        convergence: jax.Array,
+        labels: jax.Array,
         kernel_size: Sequence[int],
-        i: jnp.ndarray,
-        j: jnp.ndarray
-) -> jnp.ndarray:
+        i: jax.Array,
+        j: jax.Array
+) -> jax.Array:
 
     """Sum pool the label values of pixels that converge at a given pixel location.
 
     Parameters
     ----------
-    convergence : jnp.ndarray
+    convergence : jax.Array
         Convergence array.
-    labels : jnp.ndarray
+    labels : jax.Array
         Binary labels.
     kernel_size : Sequence[int]
         Kernel size or window size to search for labels convergence.
-    i : jnp.ndarray
+    i : jax.Array
         Pixel row index.
-    j : jnp.ndarray
+    j : jax.Array
         Pixel column index.
 
     Returns
     -------
-    pooled_label : jnp.ndarray
+    pooled_label : jax.Array
         Pooled label.
     """
 
@@ -218,12 +219,12 @@ vmap_sum_convergent_labels = vmap(
 
 
 def smooth_sum_pool(
-        deltas: jnp.ndarray,
-        labels: jnp.ndarray,
+        deltas: jax.Array,
+        labels: jax.Array,
         sigma: float = 0.5,
         kernel_size: Sequence[int] = (3, 3),
         epsilon: float = 1e-7
-) -> jnp.ndarray:
+) -> jax.Array:
 
     """Sum pool labels using deltas.
 
@@ -234,11 +235,11 @@ def smooth_sum_pool(
 
     Parameters
     ----------
-    deltas : jnp.ndarray
+    deltas : jax.Array
         Subpixel displacements.
-    labels : jnp.ndarray
+    labels : jax.Array
         Binary labels.
-    sigma : jnp.ndarray
+    sigma : jax.Array
         Standard deviation of the Gaussian distribution. Default is 0.5.
     kernel_size : Sequence[int], optional
         Kernel size or window size of the sum pooling operation. Default is (3, 3).
@@ -247,7 +248,7 @@ def smooth_sum_pool(
 
     Returns
     -------
-    pooled_labels : jnp.ndarray
+    pooled_labels : jax.Array
         Pooled labels.
     """
 
@@ -277,22 +278,22 @@ vmap_smooth_sum_pool = vmap(smooth_sum_pool, in_axes=(0, 0, None, None, None))
 
 
 def _compute_gaussian_distributions(
-        index_map: jnp.ndarray,
-        convergence: jnp.ndarray,
+        index_map: jax.Array,
+        convergence: jax.Array,
         sigma: float,
         kernel_size: Sequence[int],
         epsilon: float,
-        i: jnp.ndarray,
-        j: jnp.ndarray
-) -> jnp.ndarray:
+        i: jax.Array,
+        j: jax.Array
+) -> jax.Array:
 
     """Compute a Gaussian distribution centered at the convergence coordinates of a given pixel location.
 
     Parameters
     ----------
-    index_map : jnp.ndarray
+    index_map : jax.Array
         Index map.
-    convergence : jnp.ndarray
+    convergence : jax.Array
         Convergence array.
     sigma : float
         Standard deviation of the Gaussian distribution.
@@ -300,14 +301,14 @@ def _compute_gaussian_distributions(
         Kernel size or window size of the Gaussian distribution.
     epsilon : float
         Small constant for numerical stability.
-    i : jnp.ndarray
+    i : jax.Array
         Pixel row index.
-    j : jnp.ndarray
+    j : jax.Array
         Pixel column index.
 
     Returns
     -------
-    gaussian : jnp.ndarray
+    gaussian : jax.Array
         Gaussian distribution centered at the convergence coordinates of the given pixel location.
     """
 
@@ -328,31 +329,31 @@ vmap_compute_gaussian_distributions = vmap(
 
 
 def _distribute_labels(
-        distributions: jnp.ndarray,
-        labels: jnp.ndarray,
+        distributions: jax.Array,
+        labels: jax.Array,
         kernel_size: Sequence[int],
-        i: jnp.ndarray,
-        j: jnp.ndarray
-) -> jnp.ndarray:
+        i: jax.Array,
+        j: jax.Array
+) -> jax.Array:
 
     """Distribute the label values of nearby pixels according to a given set of distributions.
 
     Parameters
     ----------
-    distributions : jnp.ndarray
+    distributions : jax.Array
         Distributions array.
-    labels : jnp.ndarray
+    labels : jax.Array
         Binary labels.
     kernel_size : Sequence[int]
         Kernel size or window size to distribute labels.
-    i : jnp.ndarray
+    i : jax.Array
         Pixel row index.
-    j : jnp.ndarray
+    j : jax.Array
         Pixel column index.
 
     Returns
     -------
-    pooled_label : jnp.ndarray
+    pooled_label : jax.Array
         Pooled label.
     """
 

@@ -1,4 +1,4 @@
-import jax.numpy as jnp
+import jax
 
 from flax import linen as nn
 from typing import Tuple, Union
@@ -72,10 +72,10 @@ class SpotsModel(nn.Module):
     @nn.compact
     def __call__(
             self,
-            x: jnp.ndarray,
+            x: jax.Array,
             train: bool = True,
             return_style: bool = False
-    ) -> Union[Tuple[jnp.ndarray, jnp.ndarray], Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]]:
+    ) -> Union[Tuple[jax.Array, jax.Array], Tuple[jax.Array, jax.Array, jax.Array]]:
 
         encoder = build_efficientnetv2(
             blocks_args=blocks_args,

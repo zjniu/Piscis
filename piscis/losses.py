@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 
 from functools import wraps
@@ -8,22 +9,22 @@ from piscis.utils import smooth_sum_pool
 
 
 def smoothf1_loss(
-        deltas_pred: jnp.ndarray,
-        labels_pred: jnp.ndarray,
-        labels: jnp.ndarray,
+        deltas_pred: jax.Array,
+        labels_pred: jax.Array,
+        labels: jax.Array,
         dilation_iterations: int,
         epsilon: float = 1e-7
-) -> jnp.ndarray:
+) -> jax.Array:
 
     """Compute the SmoothF1 loss.
 
     Parameters
     ----------
-    deltas_pred : jnp.ndarray
+    deltas_pred : jax.Array
         Predicted subpixel displacements.
-    labels_pred : jnp.ndarray
+    labels_pred : jax.Array
         Predicted binary labels.
-    labels : jnp.ndarray
+    labels : jax.Array
         Ground truth binary labels.
     dilation_iterations : int
         Number of iterations used to dilate ground truth labels.
@@ -32,7 +33,7 @@ def smoothf1_loss(
 
     Returns
     -------
-    smoothf1 : jnp.ndarray
+    smoothf1 : jax.Array
         SmoothF1 loss.
     """
 
@@ -59,25 +60,25 @@ def smoothf1_loss(
 
 
 def dice_loss(
-        y_pred: jnp.ndarray,
-        y: jnp.ndarray,
+        y_pred: jax.Array,
+        y: jax.Array,
         epsilon: float = 1e-7
-) -> jnp.ndarray:
+) -> jax.Array:
 
     """Compute the Dice loss.
 
     Parameters
     ----------
-    y_pred : jnp.ndarray
+    y_pred : jax.Array
         Predicted binary labels.
-    y : jnp.ndarray
+    y : jax.Array
         Ground truth binary labels.
     epsilon : float, optional
         Small constant for numerical stability. Default is 1e-7.
 
     Returns
     -------
-    dl : jnp.ndarray
+    dl : jax.Array
         Dice loss.
     """
 
@@ -88,25 +89,25 @@ def dice_loss(
 
 
 def masked_rmse_loss(
-        y_pred: jnp.ndarray,
-        y: jnp.ndarray,
-        mask: jnp.ndarray,
-) -> jnp.ndarray:
+        y_pred: jax.Array,
+        y: jax.Array,
+        mask: jax.Array,
+) -> jax.Array:
 
     """Compute the root-mean-square error over masked pixels.
 
     Parameters
     ----------
-    y_pred : jnp.ndarray
+    y_pred : jax.Array
         Predicted values.
-    y : jnp.ndarray
+    y : jax.Array
         Ground truth values.
-    mask : jnp.ndarray
+    mask : jax.Array
         Binary mask where 1 indicates pixels to compute RMSE and 0 indicates pixels to ignore.
 
     Returns
     -------
-    rmse : jnp.ndarray
+    rmse : jax.Array
         Masked root-mean-square error.
     """
 
@@ -116,22 +117,22 @@ def masked_rmse_loss(
 
 
 def mse_loss(
-        y_pred: jnp.ndarray,
-        y: jnp.ndarray,
-) -> jnp.ndarray:
+        y_pred: jax.Array,
+        y: jax.Array,
+) -> jax.Array:
 
     """Compute the mean squared error.
 
     Parameters
     ----------
-    y_pred : jnp.ndarray
+    y_pred : jax.Array
         Predicted values.
-    y : jnp.ndarray
+    y : jax.Array
         Ground truth values.
 
     Returns
     -------
-    mse : jnp.ndarray
+    mse : jax.Array
         Mean squared error.
     """
 
@@ -142,22 +143,22 @@ def mse_loss(
 
 
 def bce_loss(
-        y_pred: jnp.ndarray,
-        y: jnp.ndarray,
-        pos_weight: Union[float, jnp.ndarray] = 1.0,
+        y_pred: jax.Array,
+        y: jax.Array,
+        pos_weight: Union[float, jax.Array] = 1.0,
         epsilon: float = 1e-7,
         reduction: Optional[str] = 'mean'
-) -> jnp.ndarray:
+) -> jax.Array:
 
     """Compute the binary cross entropy loss.
 
     Parameters
     ----------
-    y_pred : jnp.ndarray
+    y_pred : jax.Array
         Predicted binary labels.
-    y : jnp.ndarray
+    y : jax.Array
         Ground truth binary labels.
-    pos_weight : Union[float, jnp.ndarray], optional
+    pos_weight : Union[float, jax.Array], optional
         Weight for positive class. Default is 1.0.
     epsilon : float, optional
         Small constant for numerical stability. Default is 1e-7.
@@ -166,7 +167,7 @@ def bce_loss(
 
     Returns
     -------
-    bce : jnp.ndarray
+    bce : jax.Array
         Binary cross entropy loss.
     """
 
@@ -177,28 +178,28 @@ def bce_loss(
 
 
 def bce_with_logits_loss(
-        y_pred: jnp.ndarray,
-        y: jnp.ndarray,
-        pos_weight: Union[float, jnp.ndarray] = 1.0,
+        y_pred: jax.Array,
+        y: jax.Array,
+        pos_weight: Union[float, jax.Array] = 1.0,
         reduction: Optional[str] = 'mean'
-) -> jnp.ndarray:
+) -> jax.Array:
 
     """Compute the binary cross entropy loss with logits.
 
     Parameters
     ----------
-    y_pred : jnp.ndarray
+    y_pred : jax.Array
         Predicted logits.
-    y : jnp.ndarray
+    y : jax.Array
         Ground truth binary labels.
-    pos_weight : Union[float, jnp.ndarray], optional
+    pos_weight : Union[float, jax.Array], optional
         Weight for positive class. Default is 1.0.
     reduction : Optional[str], optional
         Loss reduction method. Default is 'mean'.
 
     Returns
     -------
-    bce : jnp.ndarray
+    bce : jax.Array
         Binary cross entropy loss.
     """
 
@@ -211,18 +212,18 @@ def bce_with_logits_loss(
 
 
 def weighted_bce_loss(
-        y_pred: jnp.ndarray,
-        y: jnp.ndarray,
+        y_pred: jax.Array,
+        y: jax.Array,
         alpha: float = 1.0,
         epsilon: float = 1e-7,
         reduction: Optional[str] = 'mean'
-) -> jnp.ndarray:
+) -> jax.Array:
 
     """Compute the weighted binary cross entropy loss.
 
-    y_pred : jnp.ndarray
+    y_pred : jax.Array
         Predicted binary labels.
-    y : jnp.ndarray
+    y : jax.Array
         Ground truth binary labels.
     alpha : float, optional
         Exponent factor applied to the inverse class weight. Default is 1.0.
@@ -233,7 +234,7 @@ def weighted_bce_loss(
 
     Returns
     -------
-    bce : jnp.ndarray
+    bce : jax.Array
         Weighted binary cross entropy loss.
     """
 
@@ -244,18 +245,18 @@ def weighted_bce_loss(
 
 
 def weighted_bce_with_logits_loss(
-        y_pred: jnp.ndarray,
-        y: jnp.ndarray,
+        y_pred: jax.Array,
+        y: jax.Array,
         alpha: float = 1.0,
         epsilon: float = 1e-7,
         reduction: Optional[str] = 'mean'
-) -> jnp.ndarray:
+) -> jax.Array:
 
     """Compute the weighted binary cross entropy loss with logits.
 
-    y_pred : jnp.ndarray
+    y_pred : jax.Array
         Predicted logits.
-    y : jnp.ndarray
+    y : jax.Array
         Ground truth binary labels.
     alpha : float, optional
         Exponent factor applied to the inverse class weight. Default is 1.0.
@@ -266,7 +267,7 @@ def weighted_bce_with_logits_loss(
 
     Returns
     -------
-    bce : jnp.ndarray
+    bce : jax.Array
         Weighted binary cross entropy loss.
     """
 
@@ -277,20 +278,20 @@ def weighted_bce_with_logits_loss(
 
 
 def cb_bce_loss(
-        y_pred: jnp.ndarray,
-        y: jnp.ndarray,
+        y_pred: jax.Array,
+        y: jax.Array,
         beta: float = 0.999,
         epsilon: float = 1e-7,
         reduction: Optional[str] = 'mean'
-) -> jnp.ndarray:
+) -> jax.Array:
 
     """Compute the class-balanced binary cross entropy loss.
 
     Parameters
     ----------
-    y_pred : jnp.ndarray
+    y_pred : jax.Array
         Predicted binary labels.
-    y : jnp.ndarray
+    y : jax.Array
         Ground truth binary labels.
     beta : float, optional
         Hyperparameter for computing the effective number of samples. Default is 0.999.
@@ -301,7 +302,7 @@ def cb_bce_loss(
 
     Returns
     -------
-    bce : jnp.ndarray
+    bce : jax.Array
         Class-balanced binary cross entropy loss.
 
     References
@@ -317,19 +318,19 @@ def cb_bce_loss(
 
 
 def cb_bce_with_logit_loss(
-        y_pred: jnp.ndarray,
-        y: jnp.ndarray,
+        y_pred: jax.Array,
+        y: jax.Array,
         beta: float = 0.999,
         reduction: Optional[str] = 'mean'
-) -> jnp.ndarray:
+) -> jax.Array:
 
     """Compute the class-balanced binary cross entropy loss with logits.
 
     Parameters
     ----------
-    y_pred : jnp.ndarray
+    y_pred : jax.Array
         Predicted logits.
-    y : jnp.ndarray
+    y : jax.Array
         Ground truth binary labels.
     beta : float, optional
         Hyperparameter for computing the effective number of samples. Default is 0.999.
@@ -338,7 +339,7 @@ def cb_bce_with_logit_loss(
 
     Returns
     -------
-    bce : jnp.ndarray
+    bce : jax.Array
         Class-balanced binary cross entropy loss.
 
     References
@@ -354,8 +355,8 @@ def cb_bce_with_logit_loss(
 
 
 def la_loss(
-        y_pred: jnp.ndarray,
-        y: jnp.ndarray,
+        y_pred: jax.Array,
+        y: jax.Array,
         tau: float = 1.0,
         reduction: Optional[str] = 'mean'
 ):
@@ -364,9 +365,9 @@ def la_loss(
 
     Parameters
     ----------
-    y_pred : jnp.ndarray
+    y_pred : jax.Array
         Predicted logits.
-    y : jnp.ndarray
+    y : jax.Array
         Ground truth binary labels.
     tau : float, optional
         Hyperparameter for computing the logit adjustment. Default is 1.0.
@@ -375,7 +376,7 @@ def la_loss(
 
     Returns
     -------
-    la : jnp.ndarray
+    la : jax.Array
         Logit-adjusted loss.
 
     References
@@ -391,8 +392,8 @@ def la_loss(
 
 
 def vs_loss(
-        y_pred: jnp.ndarray,
-        y: jnp.ndarray,
+        y_pred: jax.Array,
+        y: jax.Array,
         tau: float = 1.0,
         gamma: float = 0.25,
         reduction: Optional[str] = 'mean'
@@ -402,9 +403,9 @@ def vs_loss(
 
     Parameters
     ----------
-    y_pred : jnp.ndarray
+    y_pred : jax.Array
         Predicted logits.
-    y : jnp.ndarray
+    y : jax.Array
         Ground truth binary labels.
     tau : float, optional
         Hyperparameter for computing the additive logit adjustment. Default is 1.0.
@@ -415,7 +416,7 @@ def vs_loss(
 
     Returns
     -------
-    vs : jnp.ndarray
+    vs : jax.Array
         Vector-scaling loss.
 
     References
@@ -431,20 +432,20 @@ def vs_loss(
 
 
 def binary_focal_loss(
-        y_pred: jnp.ndarray,
-        y: jnp.ndarray,
+        y_pred: jax.Array,
+        y: jax.Array,
         gamma: float = 2,
         epsilon: float = 1e-7,
         reduction: Optional[str] = 'mean'
-) -> jnp.ndarray:
+) -> jax.Array:
 
     """Compute the binary focal loss.
 
     Parameters
     ----------
-    y_pred : jnp.ndarray
+    y_pred : jax.Array
         Predicted binary labels.
-    y : jnp.ndarray
+    y : jax.Array
         Ground truth binary labels.
     gamma : float, optional
         Hyperparameter for computing the binary focal loss. Default is 2.
@@ -455,7 +456,7 @@ def binary_focal_loss(
 
     Returns
     -------
-    bf : jnp.ndarray
+    bf : jax.Array
         Binary focal loss.
 
     References
@@ -472,19 +473,19 @@ def binary_focal_loss(
 
 
 def ce_loss(
-        y_pred: jnp.ndarray,
-        y: jnp.ndarray,
+        y_pred: jax.Array,
+        y: jax.Array,
         epsilon: float = 1e-7,
         reduction: Optional[str] = 'mean'
-) -> jnp.ndarray:
+) -> jax.Array:
 
     """Compute the cross entropy loss.
 
     Parameters
     ----------
-    y_pred : jnp.ndarray
+    y_pred : jax.Array
         Predicted labels.
-    y : jnp.ndarray
+    y : jax.Array
         Ground truth labels.
     epsilon : float, optional
         Small constant for numerical stability. Default is 1e-7.
@@ -493,7 +494,7 @@ def ce_loss(
 
     Returns
     -------
-    ce : jnp.ndarray
+    ce : jax.Array
         Cross entropy loss.
     """
 
@@ -504,20 +505,20 @@ def ce_loss(
 
 
 def focal_loss(
-        y_pred: jnp.ndarray,
-        y: jnp.ndarray,
+        y_pred: jax.Array,
+        y: jax.Array,
         gamma: float = 2,
         epsilon: float = 1e-7,
         reduction: Optional[str] = 'mean'
-) -> jnp.ndarray:
+) -> jax.Array:
 
     """Compute the focal loss.
 
     Parameters
     ----------
-    y_pred : jnp.ndarray
+    y_pred : jax.Array
         Predicted labels.
-    y : jnp.ndarray
+    y : jax.Array
         Ground truth labels.
     gamma : float, optional
         Hyperparameter for computing the focal loss. Default is 2.
@@ -528,7 +529,7 @@ def focal_loss(
 
     Returns
     -------
-    f : jnp.ndarray
+    f : jax.Array
         Focal loss.
 
     References
@@ -544,16 +545,16 @@ def focal_loss(
 
 
 def _inverse_class_weight(
-        y: jnp.ndarray,
+        y: jax.Array,
         alpha: float,
         epsilon: float
-) -> jnp.ndarray:
+) -> jax.Array:
 
     """Compute the inverse class weight.
 
     Parameters
     ----------
-    y : jnp.ndarray
+    y : jax.Array
         Ground truth binary labels.
     alpha : float
         Exponent of the inverse class weight.
@@ -562,7 +563,7 @@ def _inverse_class_weight(
 
     Returns
     -------
-    pos_weight : jnp.ndarray
+    pos_weight : jax.Array
         Inverse class weight.
     """
 
@@ -572,22 +573,22 @@ def _inverse_class_weight(
 
 
 def _class_balanced_weight(
-        y: jnp.ndarray,
+        y: jax.Array,
         beta: float
-) -> jnp.ndarray:
+) -> jax.Array:
 
     """Compute the class-balanced weight.
 
     Parameters
     ----------
-    y : jnp.ndarray
+    y : jax.Array
         Ground truth binary labels.
     beta : float
         Hyperparameter for computing the effective number of samples.
 
     Returns
     -------
-    pos_weight : jnp.ndarray
+    pos_weight : jax.Array
         Class-balanced weight.
 
     References
@@ -602,25 +603,25 @@ def _class_balanced_weight(
 
 
 def _logit_adjustment(
-        y_pred: jnp.ndarray,
-        y: jnp.ndarray,
+        y_pred: jax.Array,
+        y: jax.Array,
         tau: float
-) -> jnp.ndarray:
+) -> jax.Array:
 
     """Apply logit adjustment to the predicted logits.
 
     Parameters
     ----------
-    y_pred : jnp.ndarray
+    y_pred : jax.Array
         Predicted logits.
-    y : jnp.ndarray
+    y : jax.Array
         Ground truth binary labels.
     tau : float
         Hyperparameter for computing the logit adjustment.
 
     Returns
     -------
-    y_pred : jnp.ndarray
+    y_pred : jax.Array
         Adjusted logits.
 
     References
@@ -645,19 +646,19 @@ def _logit_adjustment(
 
 
 def _vector_scaling(
-        y_pred: jnp.ndarray,
-        y: jnp.ndarray,
+        y_pred: jax.Array,
+        y: jax.Array,
         tau: float,
         gamma: float
-) -> jnp.ndarray:
+) -> jax.Array:
 
     """Apply vector scaling to the predicted logits.
 
     Parameters
     ----------
-    y_pred : jnp.ndarray
+    y_pred : jax.Array
         Predicted logits.
-    y : jnp.ndarray
+    y : jax.Array
         Ground truth binary labels.
     tau : float
         Hyperparameter for computing the additive logit adjustment.
@@ -666,7 +667,7 @@ def _vector_scaling(
 
     Returns
     -------
-    y_pred : jnp.ndarray
+    y_pred : jax.Array
         Adjusted logits.
 
     References
@@ -721,7 +722,7 @@ def wrap_loss_fn(
     def wrapped_loss_fn(*args):
 
         # Build in_axes dynamically from the arguments.
-        in_axes = tuple(axis if isinstance(arg, jnp.ndarray) else None for arg in args)
+        in_axes = tuple(axis if isinstance(arg, jax.Array) else None for arg in args)
 
         # Vectorize the loss function.
         loss = vmap(loss_fn, in_axes=in_axes)(*args)
@@ -735,22 +736,22 @@ def wrap_loss_fn(
 
 
 def reduce_loss(
-        loss: jnp.ndarray,
+        loss: jax.Array,
         reduction: Optional[str] = 'mean'
-) -> jnp.ndarray:
+) -> jax.Array:
 
     """Reduce the loss.
 
     Parameters
     ----------
-    loss : jnp.ndarray
+    loss : jax.Array
         Loss array to be reduced.
     reduction : Optional[str], optional
         Loss reduction method. Supported methods are 'mean' and 'sum'. Default is 'mean'.
 
     Returns
     -------
-    loss : jnp.ndarray
+    loss : jax.Array
         Reduced loss.
 
     Raises

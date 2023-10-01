@@ -1,4 +1,5 @@
 import cv2 as cv
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -47,7 +48,7 @@ class RandomAugment:
     def generate_transforms(
             self,
             images: Sequence[np.ndarray],
-            key: jnp.ndarray,
+            key: jax.Array,
             base_scales: Sequence[float],
             output_size: Tuple[int, int],
             min_scale_factor: float = 0.75,
@@ -61,7 +62,7 @@ class RandomAugment:
         ----------
         images : Sequence[np.ndarray]
             Images to transform.
-        key : jnp.ndarray
+        key : jax.Array
             Random key used for generating random transformations.
         base_scales : Sequence[float]
             List of base scales for each image.
@@ -382,11 +383,11 @@ def subpixel_distance_transform(
 
     Returns
     -------
-    deltas : jnp.ndarray
+    deltas : jax.Array
         Array where each pixel is a vector to the nearest point in `coords`.
-    labels : jnp.ndarray
+    labels : jax.Array
         Array where each pixel is a boolean for whether it contains a point in `coords`.
-    nearest : jnp.ndarray
+    nearest : jax.Array
         Array where each pixel is the index of the nearest point in `coords`.
     """
 
@@ -429,7 +430,7 @@ def subpixel_distance_transform(
 
 @jit
 def _sdt(
-        inputs: Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray],
+        inputs: Tuple[jax.Array, jax.Array, jax.Array, jax.Array],
         i: int,
         j: int
 ):
@@ -438,7 +439,7 @@ def _sdt(
 
     Parameters
     ----------
-    inputs : Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]
+    inputs : Tuple[jax.Array, jax.Array, jax.Array, jax.Array]
         Tuple of inputs.
     i : int
         Pixel row index.
@@ -447,9 +448,9 @@ def _sdt(
 
     Returns
     -------
-    delta : jnp.ndarray
+    delta : jax.Array
         Vector to the nearest point.
-    nearest : jnp.ndarray
+    nearest : jax.Array
         Index of the nearest point.
     """
 
