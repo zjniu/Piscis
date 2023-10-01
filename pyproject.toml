@@ -26,6 +26,7 @@ dependencies = [
     'numpy',
     'opencv-python',
     'pandas',
+    'pydata_sphinx_theme',
     'scikit-image',
     'scipy',
     'tqdm',
