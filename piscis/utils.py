@@ -584,7 +584,7 @@ def snap_coords(
         raise ValueError("window_size must be an odd integer.")
 
     # Remove coordinates outside the image.
-    coords = coords[(coords[:, 0] > -0.5) & (coords[:, 1] > -0.5) &
+    coords = coords[(coords[:, 0] >= -0.5) & (coords[:, 1] >= -0.5) &
                     (coords[:, 0] < image.shape[0] - 0.5) & (coords[:, 1] < image.shape[1] - 0.5)]
 
     # Create a list to store the snapped coordinates.
