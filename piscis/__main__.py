@@ -51,12 +51,15 @@ def main():
                               help="Fraction of epochs for learning rate warmup. Default is 0.05.")
     train_parser.add_argument('--decay-fraction', type=float, default=0.5,
                               help="Fraction of epochs for learning rate decay.")
-    train_parser.add_argument('--decay-transitions', type=int, default=10, help="Number of times to decay the learning rate.")
+    train_parser.add_argument('--decay-transitions', type=int, default=10,
+                              help="Number of times to decay the learning rate.")
     train_parser.add_argument('--decay-factor', type=float, default=0.5,
                               help="Multiplicative factor of each learning rate decay transition.")
     train_parser.add_argument('--dilation-iterations', type=int, default=1,
                               help="Number of iterations to dilate ground truth labels to minimize class imbalance and "
                                    "misclassifications due to minor offsets.")
+    train_parser.add_argument('--max-distance', type=float, default=3.0,
+                              help="Maximum distance for matching predicted and ground truth subpixel displacements.")
     train_parser.add_argument('--rmse-loss-weight', type=float, default=0.5, help="Weight for the rmse loss term.")
     train_parser.add_argument('--bce-loss-weight', type=float, default=0.0, help="Weight for the bce loss term.")
     train_parser.add_argument('--dice-loss-weight', type=float, default=0.0, help="Weight for the dice loss term.")
@@ -93,6 +96,7 @@ def main():
             decay_transitions=args.decay_transitions,
             decay_factor=args.decay_factor,
             dilation_iterations=args.dilation_iterations,
+            max_distance=args.max_distance,
             loss_weights=loss_weights
         )
 

@@ -96,6 +96,7 @@ def compute_training_metrics(
         labels_pred: jax.Array,
         batch: Dict[str, jax.Array],
         dilation_iterations: int,
+        max_distance: float,
         loss_weights: Dict[str, float]
 ) -> Dict[str, jax.Array]:
 
@@ -111,6 +112,8 @@ def compute_training_metrics(
         Dictionary containing the input image and target arrays.
     dilation_iterations : int
         Number of iterations used to dilate ground truth labels.
+    max_distance : float
+        Maximum distance for matching predicted and ground truth subpixel displacements.
     loss_weights : Dict[str, float]
         Weights for terms in the overall loss function.
 
@@ -131,8 +134,8 @@ def compute_training_metrics(
     if 'dice' in loss_weights:
         metrics['dice'] = wrap_loss_fn(dice_loss)(labels_pred, batch['labels'])
     if 'smoothf1' in loss_weights:
-        metrics['smoothf1'] = \
-            wrap_loss_fn(smoothf1_loss)(deltas_pred, labels_pred, batch['labels'], dilation_iterations)
+        metrics['smoothf1'] = wrap_loss_fn(smoothf1_loss)(deltas_pred, labels_pred, batch['deltas'], batch['labels'],
+                                                          dilation_iterations, max_distance)
 
     # Compute the overall loss.
     metrics['loss'] = jnp.array(sum([loss_weights[k] * v for k, v in metrics.items()]))
@@ -147,6 +150,7 @@ def loss_fn(
         batch: Dict[str, jax.Array],
         key: Optional[jax.Array],
         dilation_iterations: int,
+        max_distance: float,
         loss_weights: Dict[str, float],
         train: bool
 ) -> Tuple[jax.Array, Tuple[Dict[str, jax.Array], Dict]]:
@@ -165,6 +169,8 @@ def loss_fn(
         Random Key used for dropout.
     dilation_iterations : int
         Number of iterations used to dilate ground truth labels.
+    max_distance : float
+        Maximum distance for matching predicted and ground truth subpixel displacements.
     loss_weights : Dict[str, float]
         Weights for terms in the overall loss function.
     train : bool
@@ -190,7 +196,7 @@ def loss_fn(
         mutated_vars = None
 
     # Compute the loss and metrics.
-    metrics = compute_training_metrics(deltas_pred, labels_pred, batch, dilation_iterations, loss_weights)
+    metrics = compute_training_metrics(deltas_pred, labels_pred, batch, dilation_iterations, max_distance, loss_weights)
     loss = metrics['loss']
     aux = (metrics, mutated_vars)
 
@@ -203,6 +209,7 @@ def train_step(
         batch: Dict[str, jax.Array],
         key: Optional[jax.Array],
         dilation_iterations: int,
+        max_distance: float,
         loss_weights: Dict[str, float]
 ) -> Tuple[TrainState, Dict[str, jax.Array]]:
 
@@ -218,6 +225,8 @@ def train_step(
         Random Key used for dropout.
     dilation_iterations : int
         Number of iterations used to dilate ground truth labels.
+    max_distance : float
+        Maximum distance for matching predicted and ground truth subpixel displacements.
     loss_weights : Dict[str, float]
         Weights for terms in the overall loss function.
 
@@ -233,8 +242,8 @@ def train_step(
     grad_fn = value_and_grad(loss_fn, has_aux=True)
 
     # Compute gradients and update parameters.
-    (_, (metrics, mutated_vars)), grads = \
-        grad_fn(state.params, state.batch_stats, batch, key, dilation_iterations, loss_weights, train=True)
+    (_, (metrics, mutated_vars)), grads = grad_fn(state.params, state.batch_stats, batch, key,
+                                                  dilation_iterations, max_distance, loss_weights, train=True)
     state = state.apply_gradients(grads=grads, batch_stats=mutated_vars['batch_stats'])
 
     return state, metrics
@@ -247,6 +256,7 @@ def train_epoch(
         batch_size: int,
         epoch_learning_rate: float,
         dilation_iterations: int,
+        max_distance: float,
         loss_weights: Dict[str, float],
         coords_max_length: int
 ) -> Tuple[TrainState, List[Dict[str, float]], Dict[str, float]]:
@@ -268,6 +278,8 @@ def train_epoch(
     dilation_iterations : int
         Number of iterations to dilate ground truth labels to minimize class imbalance misclassifications due to minor
         offsets.
+    max_distance : float
+        Maximum distance for matching predicted and ground truth subpixel displacements.
     loss_weights : Dict[str, float]
         Weights for terms in the overall loss function.
     coords_max_length : int
@@ -316,7 +328,7 @@ def train_epoch(
         train_batch = transform_batch(train_batch, coords_max_length, dilation_iterations)
 
         # Perform a training step and update metrics.
-        state, metrics = train_step(state, train_batch, subkeys[2], dilation_iterations, loss_weights)
+        state, metrics = train_step(state, train_batch, subkeys[2], dilation_iterations, max_distance, loss_weights)
         metrics = {k: float(v) for k, v in metrics.items()}
         batch_metrics.append(metrics)
 
@@ -341,8 +353,8 @@ def train_epoch(
         val_batch = transform_batch(val_batch, coords_max_length, dilation_iterations)
 
         # Compute and update validation metrics.
-        _, (val_metrics, _) = loss_fn(state.params, state.batch_stats, val_batch, None, dilation_iterations,
-                                      loss_weights, train=False)
+        _, (val_metrics, _) = loss_fn(state.params, state.batch_stats, val_batch, None,
+                                      dilation_iterations, max_distance, loss_weights, train=False)
         val_metrics = {f'val_{k}': float(v) for k, v in val_metrics.items()}
         val_batch_metrics.append(val_metrics)
 
@@ -383,6 +395,7 @@ def train_model(
         decay_transitions: int = 10,
         decay_factor: float = 0.5,
         dilation_iterations: int = 1,
+        max_distance: float = 3.0,
         loss_weights: Optional[Dict[str, float]] = None
 ) -> None:
 
@@ -417,6 +430,8 @@ def train_model(
     dilation_iterations : int, optional
         Number of iterations to dilate ground truth labels to minimize class imbalance and misclassifications due to
         minor offsets. Default is 1.
+    max_distance : float, optional
+        Maximum distance for matching predicted and ground truth subpixel displacements. Default is 3.0.
     loss_weights : Optional[Dict[str, float]], optional
         Weights for terms in the overall loss function. Supported terms are 'rmse', 'bce', 'dice', and 'smoothf1'. If
         None, the loss weights {'rmse': 0.5, 'smoothf1': 1.0} will be used. Default is None.
@@ -508,8 +523,9 @@ def train_model(
     for epoch_learning_rate in learning_rate_schedule:
 
         # Train the model for a single epoch.
-        state, batch_metrics, epoch_metrics = train_epoch(state, dataset, input_size, batch_size, epoch_learning_rate,
-                                                          dilation_iterations, loss_weights, coords_max_length)
+        state, batch_metrics, epoch_metrics = \
+            train_epoch(state, dataset, input_size, batch_size, epoch_learning_rate,
+                        dilation_iterations, max_distance, loss_weights, coords_max_length)
 
         # Update batch metrics and epoch metrics logs.
         batch_metrics_log += batch_metrics

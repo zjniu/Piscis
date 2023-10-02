@@ -11,8 +11,10 @@ from piscis.utils import smooth_sum_pool
 def smoothf1_loss(
         deltas_pred: jax.Array,
         labels_pred: jax.Array,
+        deltas: jax.Array,
         labels: jax.Array,
         dilation_iterations: int,
+        max_distance: float,
         epsilon: float = 1e-7
 ) -> jax.Array:
 
@@ -24,10 +26,14 @@ def smoothf1_loss(
         Predicted subpixel displacements.
     labels_pred : jax.Array
         Predicted binary labels.
+    deltas : jax.Array
+        Ground truth subpixel displacements.
     labels : jax.Array
         Ground truth binary labels.
     dilation_iterations : int
         Number of iterations used to dilate ground truth labels.
+    max_distance : float
+        Maximum distance for matching predicted and ground truth subpixel displacements.
     epsilon : float, optional
         Small constant for numerical stability. Default is 1e-7.
 
@@ -47,9 +53,11 @@ def smoothf1_loss(
     # Apply deltas_pred to labels_pred.
     kernel_size = (2 * dilation_iterations + 1, ) * 2
     pooled_labels = smooth_sum_pool(deltas_pred, labels_pred, 0.5, kernel_size)
+    distances = jnp.linalg.norm(deltas_pred - deltas, axis=-1)
+    matches = jnp.maximum(1 - distances / max_distance, 0.0)
 
     # Estimate the number of true positives, false positives, and false negatives.
-    tp = jnp.sum(labels * pooled_labels)
+    tp = jnp.sum(pooled_labels * matches)
     fp = jnp.sum(pooled_labels) - tp
     fn = jnp.sum(labels) - tp
 
