@@ -60,7 +60,7 @@ def main():
                                    "misclassifications due to minor offsets.")
     train_parser.add_argument('--max-distance', type=float, default=3.0,
                               help="Maximum distance for matching predicted and ground truth subpixel displacements.")
-    train_parser.add_argument('--rmse-loss-weight', type=float, default=0.5, help="Weight for the rmse loss term.")
+    train_parser.add_argument('--rmse-loss-weight', type=float, default=0.2, help="Weight for the rmse loss term.")
     train_parser.add_argument('--bce-loss-weight', type=float, default=0.0, help="Weight for the bce loss term.")
     train_parser.add_argument('--dice-loss-weight', type=float, default=0.0, help="Weight for the dice loss term.")
     train_parser.add_argument('--smoothf1-loss-weight', type=float, default=1.0,
