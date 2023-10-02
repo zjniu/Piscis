@@ -143,7 +143,7 @@ def compute_training_metrics(
     return metrics
 
 
-@partial(jit, static_argnums=(4, 6))
+@partial(jit, static_argnums=(4, 5, 7))
 def loss_fn(
         params: Any,
         batch_stats: Any,
@@ -203,7 +203,7 @@ def loss_fn(
     return loss, aux
 
 
-@partial(jit, static_argnums=3)
+@partial(jit, static_argnums=(3, 4))
 def train_step(
         state: TrainState,
         batch: Dict[str, jax.Array],
