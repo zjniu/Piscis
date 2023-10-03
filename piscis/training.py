@@ -389,6 +389,7 @@ def train_model(
         random_seed: int = 0,
         batch_size: int = 4,
         learning_rate: float = 0.1,
+        weight_decay: float = 1e-4,
         epochs: int = 400,
         warmup_fraction: float = 0.05,
         decay_fraction: float = 0.5,
@@ -417,6 +418,8 @@ def train_model(
         Batch size for training. Default is 4.
     learning_rate : float, optional
         Learning rate for the optimizer. Default is 0.1.
+    weight_decay : float, optional
+        Strength of the weight decay regularization. Default is 1e-4.
     epochs : int, optional
         Number of epochs to train the model for. Default is 400.
     warmup_fraction : float, optional
@@ -465,7 +468,7 @@ def train_model(
     learning_rate_schedule = warmup + constant + decay
 
     # Create the optimizer.
-    optimizer = partial(sgdw, momentum=0.9, nesterov=True, weight_decay=1e-4)
+    optimizer = partial(sgdw, momentum=0.9, nesterov=True, weight_decay=weight_decay)
     tx = optax.inject_hyperparams(optimizer)(learning_rate=learning_rate)
 
     # Default loss weights.

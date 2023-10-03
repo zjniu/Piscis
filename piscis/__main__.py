@@ -20,21 +20,29 @@ def main():
     # Predict subparser.
     predict_parser = subparsers.add_parser('predict', formatter_class=formatter_class,
                                            help="Predict spots using a trained SpotsModel.")
-    predict_parser.add_argument('input_path', type=str, help="Path to image or stack of images.")
-    predict_parser.add_argument('output_path', type=str, help="Path to save predicted spots as CSV.")
-    predict_parser.add_argument('--model-name', type=str, default='20230709', help="Model name.")
-    predict_parser.add_argument('--batch-size', type=int, default=4, help="Batch size for the CNN.")
-    predict_parser.add_argument('--stack', action='store_true', help="Whether the input is a stack of images.")
-    predict_parser.add_argument('--scale', type=float, default=1.0, help="Scale factor for rescaling the input.")
+    predict_parser.add_argument('input_path', type=str,
+                                help="Path to image or stack of images.")
+    predict_parser.add_argument('output_path', type=str,
+                                help="Path to save predicted spots as CSV.")
+    predict_parser.add_argument('--model-name', type=str, default='20230709',
+                                help="Model name.")
+    predict_parser.add_argument('--batch-size', type=int, default=4,
+                                help="Batch size for the CNN.")
+    predict_parser.add_argument('--stack', action='store_true',
+                                help="Whether the input is a stack of images.")
+    predict_parser.add_argument('--scale', type=float, default=1.0,
+                                help="Scale factor for rescaling the input.")
     predict_parser.add_argument('--threshold', type=float, default=1.0,
                                 help="Spot detection threshold. Can be interpreted as the minimum number of fully "
-                                     "confident pixels necessary to identify a spot."
-                                )
-    predict_parser.add_argument('--min-distance', type=int, default=1, help="Minimum distance between spots.")
+                                     "confident pixels necessary to identify a spot.")
+    predict_parser.add_argument('--min-distance', type=int, default=1,
+                                help="Minimum distance between spots.")
 
     # Train subparser.
-    train_parser = subparsers.add_parser('train', formatter_class=formatter_class, help="Train a SpotsModel")
-    train_parser.add_argument('model_name', type=str, help="Name of a new or existing model.")
+    train_parser = subparsers.add_parser('train', formatter_class=formatter_class,
+                                         help="Train a SpotsModel")
+    train_parser.add_argument('model_name', type=str,
+                              help="Name of a new or existing model.")
     train_parser.add_argument('dataset_path', type=str,
                               help="Path to the directory containing training and validation datasets.")
     train_parser.add_argument('--adjustment', type=str, default='standardize',
@@ -44,9 +52,14 @@ def main():
                               help="Size of the input images used for training.")
     train_parser.add_argument('--random-seed', type=int, default=0,
                               help="Random seed used for initialization and training.")
-    train_parser.add_argument('--batch-size', type=int, default=4, help="Batch size for training.")
-    train_parser.add_argument('--learning-rate', type=float, default=0.1, help="Learning rate for the optimizer.")
-    train_parser.add_argument('--epochs', type=int, default=300, help="Number of epochs to train the model for.")
+    train_parser.add_argument('--batch-size', type=int, default=4,
+                              help="Batch size for training.")
+    train_parser.add_argument('--learning-rate', type=float, default=0.1,
+                              help="Learning rate for the optimizer.")
+    train_parser.add_argument('--weight-decay', type=float, default=1e-4,
+                              help="Strength of the weight decay regularization.")
+    train_parser.add_argument('--epochs', type=int, default=300,
+                              help="Number of epochs to train the model for.")
     train_parser.add_argument('--warmup-fraction', type=float, default=0.05,
                               help="Fraction of epochs for learning rate warmup. Default is 0.05.")
     train_parser.add_argument('--decay-fraction', type=float, default=0.5,
@@ -60,9 +73,12 @@ def main():
                                    "misclassifications due to minor offsets.")
     train_parser.add_argument('--max-distance', type=float, default=3.0,
                               help="Maximum distance for matching predicted and ground truth subpixel displacements.")
-    train_parser.add_argument('--rmse-loss-weight', type=float, default=0.2, help="Weight for the rmse loss term.")
-    train_parser.add_argument('--bce-loss-weight', type=float, default=0.0, help="Weight for the bce loss term.")
-    train_parser.add_argument('--dice-loss-weight', type=float, default=0.0, help="Weight for the dice loss term.")
+    train_parser.add_argument('--rmse-loss-weight', type=float, default=0.2,
+                              help="Weight for the rmse loss term.")
+    train_parser.add_argument('--bce-loss-weight', type=float, default=0.0,
+                              help="Weight for the bce loss term.")
+    train_parser.add_argument('--dice-loss-weight', type=float, default=0.0,
+                              help="Weight for the dice loss term.")
     train_parser.add_argument('--smoothf1-loss-weight', type=float, default=1.0,
                               help="Weight for the smoothf1 loss term.")
 
@@ -90,6 +106,7 @@ def main():
             random_seed=args.random_seed,
             batch_size=args.batch_size,
             learning_rate=args.learning_rate,
+            weight_decay=args.weight_decay,
             epochs=args.epochs,
             warmup_fraction=args.warmup_fraction,
             decay_fraction=args.decay_fraction,
