@@ -364,7 +364,7 @@ def subpixel_distance_transform(
         dx: float = 1.0
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
 
-    """Apply the subpixel distance transform to a list of coordinates.
+    """Apply the subpixel distance transform to a list of coordinates. Adapted from DeepCell Spots.
 
     Generate an array where each pixel is a vector to the nearest point in `coords`.
 
@@ -389,6 +389,11 @@ def subpixel_distance_transform(
         Array where each pixel is a boolean for whether it contains a point in `coords`.
     nearest : jax.Array
         Array where each pixel is the index of the nearest point in `coords`.
+
+    References
+    ----------
+    .. [1] Laubscher, Emily, et al. "vanvalenlab/deepcell-spots: Deep Learning Library for Spot Detection." GitHub,
+           https://github.com/vanvalenlab/deepcell-spots.
     """
 
     # Initialize intermediate and output arrays.
