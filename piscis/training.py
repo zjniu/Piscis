@@ -43,6 +43,7 @@ class TrainState(train_state.TrainState, ABC):
 def create_train_state(
         key: jax.Array,
         input_size: Tuple[int, int],
+        dropout_rate: float,
         tx: optax.GradientTransformation,
         variables: Optional[Dict] = None
 ) -> TrainState:
@@ -55,6 +56,8 @@ def create_train_state(
         Random key used for initialization and training.
     input_size : Tuple[int, int]
         Size of the input images used for training.
+    dropout_rate : float
+        Dropout rate at skip connections.
     tx : optax.GradientTransformation
         Optax optimizer used for training.
     variables : Optional[Dict]
@@ -70,7 +73,7 @@ def create_train_state(
     key, subkey = random.split(key, 2)
 
     # Initialize the model.
-    model = SpotsModel()
+    model = SpotsModel(dropout_rate=dropout_rate)
 
     # Initialize parameters.
     if variables is None:
@@ -146,7 +149,7 @@ def compute_training_metrics(
 @partial(jit, static_argnums=(4, 5, 7))
 def loss_fn(
         params: Any,
-        batch_stats: Any,
+        state: TrainState,
         batch: Dict[str, jax.Array],
         key: Optional[jax.Array],
         dilation_iterations: int,
@@ -161,8 +164,8 @@ def loss_fn(
     ----------
     params : Any
         Model parameters.
-    batch_stats : Any
-        Batch statistics used for normalization.
+    state : TrainState
+        Current training state.
     batch : Dict[str, jax.Array]
         Dictionary containing the input images and target arrays.
     key : Optional[jax.Array]
@@ -184,15 +187,15 @@ def loss_fn(
         Auxiliary containing metrics and mutable state variables.
     """
 
-    variables = {'params': params, 'batch_stats': batch_stats}
+    variables = {'params': params, 'batch_stats': state.batch_stats}
     images = batch['images']
 
     # Apply the model to the images, using batch_stats as a mutable variable if training.
     if train:
         (deltas_pred, labels_pred), mutated_vars = \
-            SpotsModel().apply(variables, images, train=train, rngs={'dropout': key}, mutable=['batch_stats'])
+            state.apply_fn(variables, images, train=train, rngs={'dropout': key}, mutable=['batch_stats'])
     else:
-        deltas_pred, labels_pred = SpotsModel().apply(variables, images, train=train)
+        deltas_pred, labels_pred = state.apply_fn(variables, images, train=train)
         mutated_vars = None
 
     # Compute the loss and metrics.
@@ -242,7 +245,7 @@ def train_step(
     grad_fn = value_and_grad(loss_fn, has_aux=True)
 
     # Compute gradients and update parameters.
-    (_, (metrics, mutated_vars)), grads = grad_fn(state.params, state.batch_stats, batch, key,
+    (_, (metrics, mutated_vars)), grads = grad_fn(state.params, state, batch, key,
                                                   dilation_iterations, max_distance, loss_weights, train=True)
     state = state.apply_gradients(grads=grads, batch_stats=mutated_vars['batch_stats'])
 
@@ -353,7 +356,7 @@ def train_epoch(
         val_batch = transform_batch(val_batch, coords_max_length, dilation_iterations)
 
         # Compute and update validation metrics.
-        _, (val_metrics, _) = loss_fn(state.params, state.batch_stats, val_batch, None,
+        _, (val_metrics, _) = loss_fn(state.params, state, val_batch, None,
                                       dilation_iterations, max_distance, loss_weights, train=False)
         val_metrics = {f'val_{k}': float(v) for k, v in val_metrics.items()}
         val_batch_metrics.append(val_metrics)
@@ -388,8 +391,9 @@ def train_model(
         input_size: Tuple[int, int] = (256, 256),
         random_seed: int = 0,
         batch_size: int = 4,
-        learning_rate: float = 0.1,
+        learning_rate: float = 0.05,
         weight_decay: float = 1e-4,
+        dropout_rate: float = 0.25,
         epochs: int = 400,
         warmup_fraction: float = 0.05,
         decay_fraction: float = 0.5,
@@ -417,9 +421,11 @@ def train_model(
     batch_size : int, optional
         Batch size for training. Default is 4.
     learning_rate : float, optional
-        Learning rate for the optimizer. Default is 0.1.
+        Learning rate for the optimizer. Default is 0.05.
     weight_decay : float, optional
         Strength of the weight decay regularization. Default is 1e-4.
+    dropout_rate : float, optional
+        Dropout rate at skip connections. Default is 0.25.
     epochs : int, optional
         Number of epochs to train the model for. Default is 400.
     warmup_fraction : float, optional
@@ -437,7 +443,7 @@ def train_model(
         Maximum distance for matching predicted and ground truth subpixel displacements. Default is 3.0.
     loss_weights : Optional[Dict[str, float]], optional
         Weights for terms in the overall loss function. Supported terms are 'rmse', 'bce', 'dice', and 'smoothf1'. If
-        None, the loss weights {'rmse': 0.2, 'smoothf1': 1.0} will be used. Default is None.
+        None, the loss weights {'rmse': 0.25, 'smoothf1': 1.0} will be used. Default is None.
 
     Raises
     ------
@@ -473,7 +479,7 @@ def train_model(
 
     # Default loss weights.
     if loss_weights is None:
-        loss_weights = {'rmse': 0.2, 'smoothf1': 1.0}
+        loss_weights = {'rmse': 0.25, 'smoothf1': 1.0}
 
     # Define directories for storing checkpoints and the model.
     checkpoint_path = CHECKPOINTS_DIR / model_name
@@ -503,7 +509,7 @@ def train_model(
 
     # Create a new training state.
     print('Creating new TrainState...')
-    state = create_train_state(key, input_size, tx, variables)
+    state = create_train_state(key, input_size, dropout_rate, tx, variables)
 
     # Create lists for storing batch and epoch metrics.
     batch_metrics_log = []

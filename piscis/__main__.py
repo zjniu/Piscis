@@ -54,11 +54,11 @@ def main():
                               help="Random seed used for initialization and training.")
     train_parser.add_argument('--batch-size', type=int, default=4,
                               help="Batch size for training.")
-    train_parser.add_argument('--learning-rate', type=float, default=0.1,
+    train_parser.add_argument('--learning-rate', type=float, default=0.05,
                               help="Learning rate for the optimizer.")
     train_parser.add_argument('--weight-decay', type=float, default=1e-4,
                               help="Strength of the weight decay regularization.")
-    train_parser.add_argument('--epochs', type=int, default=300,
+    train_parser.add_argument('--epochs', type=int, default=400,
                               help="Number of epochs to train the model for.")
     train_parser.add_argument('--warmup-fraction', type=float, default=0.05,
                               help="Fraction of epochs for learning rate warmup. Default is 0.05.")
