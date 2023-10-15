@@ -161,7 +161,7 @@ class RandomAugment:
 
             # Filter coordinates outside transformed image
             if filter_coords:
-                transformed_coord = transformed_coord[np.all((transformed_coord >= -0.5) &
+                transformed_coord = transformed_coord[np.all((transformed_coord > -0.5) &
                                                              (transformed_coord < np.array(self.output_size) - 0.5),
                                                              axis=1)]
 
@@ -408,8 +408,8 @@ def subpixel_distance_transform(
     for i, coord in enumerate(coords):
 
         # Remove coordinates outside the output arrays.
-        coord = coord[(coord[:, 0] >= -0.5) & (coord[:, 0] < output_size[0] - 0.5) &
-                      (coord[:, 1] >= -0.5) & (coord[:, 1] < output_size[1] - 0.5)]
+        coord = coord[(coord[:, 0] > -0.5) & (coord[:, 0] < output_size[0] - 0.5) &
+                      (coord[:, 1] > -0.5) & (coord[:, 1] < output_size[1] - 0.5)]
 
         # Pad coordinates to the same length.
         padding = ((0, coords_pad_length - len(coord)), (0, 0))
