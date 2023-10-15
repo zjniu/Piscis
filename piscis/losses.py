@@ -96,13 +96,13 @@ def dice_loss(
     return dl
 
 
-def masked_rmse_loss(
+def masked_l2_loss(
         y_pred: jax.Array,
         y: jax.Array,
-        mask: jax.Array,
+        mask: jax.Array
 ) -> jax.Array:
 
-    """Compute the root-mean-square error over masked pixels.
+    """Compute the L2 loss over masked pixels.
 
     Parameters
     ----------
@@ -111,7 +111,7 @@ def masked_rmse_loss(
     y : jax.Array
         Ground truth values.
     mask : jax.Array
-        Binary mask where 1 indicates pixels to compute RMSE and 0 indicates pixels to ignore.
+        Binary mask where 1 indicates pixels to compute the L2 loss and 0 indicates pixels to ignore.
 
     Returns
     -------
@@ -119,9 +119,9 @@ def masked_rmse_loss(
         Masked root-mean-square error.
     """
 
-    rmse = jnp.sqrt(jnp.sum(((y_pred - y) * mask) ** 2) / jnp.sum(mask))
+    l2 = jnp.sum(jnp.linalg.norm(y_pred - y, axis=-1) * mask) / jnp.sum(mask)
 
-    return rmse
+    return l2
 
 
 def mse_loss(

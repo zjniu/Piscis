@@ -67,7 +67,7 @@ class SpotsModel(nn.Module):
 
     style: bool = True
     aggregate: str = 'sum'
-    dropout_rate: float = 0.25
+    dropout_rate: float = 0.2
 
     @nn.compact
     def __call__(

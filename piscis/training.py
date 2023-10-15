@@ -14,7 +14,7 @@ from tqdm.auto import tqdm
 from typing import Any, Dict, List, Optional, Tuple
 
 from piscis.data import load_datasets, transform_batch, transform_subdataset
-from piscis.losses import dice_loss, masked_rmse_loss, smoothf1_loss, weighted_bce_loss, wrap_loss_fn
+from piscis.losses import dice_loss, masked_l2_loss, smoothf1_loss, weighted_bce_loss, wrap_loss_fn
 from piscis.models.spots import SpotsModel
 from piscis.optimizers import sgdw
 from piscis.paths import CHECKPOINTS_DIR, MODELS_DIR
@@ -130,8 +130,8 @@ def compute_training_metrics(
     metrics = {}
 
     # Compute loss terms.
-    if 'rmse' in loss_weights:
-        metrics['rmse'] = wrap_loss_fn(masked_rmse_loss)(deltas_pred, batch['deltas'], batch['labels'])
+    if 'l2' in loss_weights:
+        metrics['l2'] = wrap_loss_fn(masked_l2_loss)(deltas_pred, batch['deltas'], batch['labels'][:, :, :, 0])
     if 'bce' in loss_weights:
         metrics['bce'] = wrap_loss_fn(weighted_bce_loss)(labels_pred, batch['labels'])
     if 'dice' in loss_weights:
@@ -391,9 +391,9 @@ def train_model(
         input_size: Tuple[int, int] = (256, 256),
         random_seed: int = 0,
         batch_size: int = 4,
-        learning_rate: float = 0.05,
+        learning_rate: float = 0.2,
         weight_decay: float = 1e-4,
-        dropout_rate: float = 0.25,
+        dropout_rate: float = 0.2,
         epochs: int = 400,
         warmup_fraction: float = 0.05,
         decay_fraction: float = 0.5,
@@ -421,11 +421,11 @@ def train_model(
     batch_size : int, optional
         Batch size for training. Default is 4.
     learning_rate : float, optional
-        Learning rate for the optimizer. Default is 0.05.
+        Learning rate for the optimizer. Default is 0.2.
     weight_decay : float, optional
         Strength of the weight decay regularization. Default is 1e-4.
     dropout_rate : float, optional
-        Dropout rate at skip connections. Default is 0.25.
+        Dropout rate at skip connections. Default is 0.2.
     epochs : int, optional
         Number of epochs to train the model for. Default is 400.
     warmup_fraction : float, optional
@@ -442,8 +442,8 @@ def train_model(
     max_distance : float, optional
         Maximum distance for matching predicted and ground truth subpixel displacements. Default is 3.0.
     loss_weights : Optional[Dict[str, float]], optional
-        Weights for terms in the overall loss function. Supported terms are 'rmse', 'bce', 'dice', and 'smoothf1'. If
-        None, the loss weights {'rmse': 0.25, 'smoothf1': 1.0} will be used. Default is None.
+        Weights for terms in the overall loss function. Supported terms are 'l2', 'bce', 'dice', and 'smoothf1'. If
+        None, the loss weights {'l2': 0.25, 'smoothf1': 1.0} will be used. Default is None.
 
     Raises
     ------
@@ -479,7 +479,7 @@ def train_model(
 
     # Default loss weights.
     if loss_weights is None:
-        loss_weights = {'rmse': 0.25, 'smoothf1': 1.0}
+        loss_weights = {'l2': 0.25, 'smoothf1': 1.0}
 
     # Define directories for storing checkpoints and the model.
     checkpoint_path = CHECKPOINTS_DIR / model_name

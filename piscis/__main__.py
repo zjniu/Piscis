@@ -54,14 +54,16 @@ def main():
                               help="Random seed used for initialization and training.")
     train_parser.add_argument('--batch-size', type=int, default=4,
                               help="Batch size for training.")
-    train_parser.add_argument('--learning-rate', type=float, default=0.05,
+    train_parser.add_argument('--learning-rate', type=float, default=0.2,
                               help="Learning rate for the optimizer.")
     train_parser.add_argument('--weight-decay', type=float, default=1e-4,
                               help="Strength of the weight decay regularization.")
+    train_parser.add_argument('--dropout-rate', type=float, default=0.2,
+                              help="Dropout rate at skip connections.")
     train_parser.add_argument('--epochs', type=int, default=400,
                               help="Number of epochs to train the model for.")
     train_parser.add_argument('--warmup-fraction', type=float, default=0.05,
-                              help="Fraction of epochs for learning rate warmup. Default is 0.05.")
+                              help="Fraction of epochs for learning rate warmup.")
     train_parser.add_argument('--decay-fraction', type=float, default=0.5,
                               help="Fraction of epochs for learning rate decay.")
     train_parser.add_argument('--decay-transitions', type=int, default=10,
@@ -71,10 +73,8 @@ def main():
     train_parser.add_argument('--dilation-iterations', type=int, default=1,
                               help="Number of iterations to dilate ground truth labels to minimize class imbalance and "
                                    "misclassifications due to minor offsets.")
-    train_parser.add_argument('--max-distance', type=float, default=3.0,
-                              help="Maximum distance for matching predicted and ground truth subpixel displacements.")
-    train_parser.add_argument('--rmse-loss-weight', type=float, default=0.2,
-                              help="Weight for the rmse loss term.")
+    train_parser.add_argument('--l2-loss-weight', type=float, default=0.25,
+                              help="Weight for the L2 loss term.")
     train_parser.add_argument('--bce-loss-weight', type=float, default=0.0,
                               help="Weight for the bce loss term.")
     train_parser.add_argument('--dice-loss-weight', type=float, default=0.0,
@@ -88,8 +88,8 @@ def main():
 
         # Create the loss weights dictionary.
         loss_weights = {}
-        if args.rmse_loss_weight > 0:
-            loss_weights['rmse'] = args.rmse_loss_weight
+        if args.l2_loss_weight > 0:
+            loss_weights['l2'] = args.l2_loss_weight
         if args.bce_loss_weight > 0:
             loss_weights['bce'] = args.bce_loss_weight
         if args.dice_loss_weight > 0:
@@ -107,6 +107,7 @@ def main():
             batch_size=args.batch_size,
             learning_rate=args.learning_rate,
             weight_decay=args.weight_decay,
+            dropout_rate=args.dropout_rate,
             epochs=args.epochs,
             warmup_fraction=args.warmup_fraction,
             decay_fraction=args.decay_fraction,
