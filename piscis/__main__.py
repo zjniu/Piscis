@@ -24,7 +24,7 @@ def main():
                                 help="Path to image or stack of images.")
     predict_parser.add_argument('output_path', type=str,
                                 help="Path to save predicted spots as CSV.")
-    predict_parser.add_argument('--model-name', type=str, default='20230709',
+    predict_parser.add_argument('--model-name', type=str, default='20230905',
                                 help="Model name.")
     predict_parser.add_argument('--batch-size', type=int, default=4,
                                 help="Batch size for the CNN.")
