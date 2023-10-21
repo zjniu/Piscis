@@ -52,7 +52,8 @@ def list_pretrained_models() -> Sequence[str]:
 
 def download_dataset(
         dataset_name: str,
-        path: str
+        path: str,
+        minimal_download: bool = True
 ) -> None:
 
     """Download a dataset from Hugging Face.
@@ -63,6 +64,8 @@ def download_dataset(
         Dataset name.
     path : str
         Path to save the dataset.
+    minimal_download : bool, optional
+        Whether to download only the necessary files for training and inference. Default is True.
 
     Raises
     ------
@@ -72,8 +75,16 @@ def download_dataset(
 
     fs = HfFileSystem()
     hf_dataset_path = f'{HF_DATASETS_DIR}{dataset_name}'
-    if fs.exists(hf_dataset_path):
-        fs.download(hf_dataset_path, str(path), recursive=True)
+    if fs.exists(hf_dataset_path) and ('/' not in dataset_name):
+        path = str(path)
+        if minimal_download:
+            dataset_path = Path(path) / dataset_name
+            dataset_path.mkdir(parents=True, exist_ok=True)
+            dataset_path = str(dataset_path)
+            for file_path in fs.glob(f'{hf_dataset_path}/*.npz'):
+                fs.download(file_path, dataset_path)
+        else:
+            fs.download(hf_dataset_path, path, recursive=True)
     else:
         raise ValueError(f"Dataset {dataset_name} is not found.")
 
