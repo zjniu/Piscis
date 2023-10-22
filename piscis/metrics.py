@@ -15,7 +15,7 @@ def compute_metrics(
         return_df: bool = False
 ) -> Union[Dict[str, float], Tuple[Dict[str, float], pd.DataFrame]]:
 
-    """Compute evaluation metrics from predicted and ground truth spot coordinates.
+    """Compute evaluation metrics from predicted and ground truth spot coordinates. Adapted from deepBlink.
 
     Parameters
     ----------
@@ -43,6 +43,11 @@ def compute_metrics(
         Dictionary of aggregate metrics integrated over the distance thresholds.
     df : pd.DataFrame, optional
         DataFrame with additional information. Only returned if `return_df` is True.
+
+    References
+    ----------
+    .. [1] Eichenberger, Bastian, et al. "BBQuercus/deepBlink: Threshold independent detection and localization of
+           diffraction-limited spots." GitHub, https://github.com/BBQuercus/deepBlink.
     """
 
     # Compute the distance matrix between predicted and ground truth spot coordinates.
