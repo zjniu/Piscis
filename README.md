@@ -36,7 +36,7 @@ By default, this will install the CPU version of JAX. If you would like to run o
 
 ## Usage
 If you want to use `piscis` with its Python API, check out the [inference example](notebooks/run_piscis.ipynb) and
-[training example](notebooks/train_piscis.ipynb) Jupyter notebooks.
+[training example](notebooks/train_piscis.ipynb) notebooks.
 
 If you want to use `piscis` with its command line interface, run the following commands.
 ```
