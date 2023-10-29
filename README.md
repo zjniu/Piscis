@@ -1,9 +1,6 @@
-<div style="float: right; margin-left: 1rem;">
-    <img src="docs/_static/logo.svg" width=200 alt="Piscis">
-</div>
-
-
 # Piscis
+
+<img src="docs/_static/logo.svg" width="250" alt="Piscis" align="right">
 
 `piscis` is an automatic deep learning algorithm for spot detection, written in Python using the
 [JAX](https://github.com/google/jax) and [Flax](https://github.com/google/flax) libraries. It is named after the Latin
@@ -23,7 +20,7 @@ researchers to interactively visualize their data while leveraging state-of-the-
 
 ## Examples
 
-<img src="docs/_static/examples.png" width=600 title="Examples" alt="Examples">
+<img src="docs/_static/examples.png" width="750" alt="Examples">
 
 
 ## Installation
