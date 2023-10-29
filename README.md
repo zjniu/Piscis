@@ -35,16 +35,16 @@ By default, this will install the CPU version of JAX. If you would like to run o
 
 
 ## Usage
-If you want to use `piscis` with its Python API, check out the example Jupyter notebooks for 
-[inference](notebooks/run_piscis.ipynb) and [training](notebooks/train_piscis.ipynb).
+If you want to use `piscis` with its Python API, check out the [inference example](notebooks/run_piscis.ipynb) and
+[training example](notebooks/train_piscis.ipynb) Jupyter notebooks.
 
 If you want to use `piscis` with its command line interface, run the following commands.
-```bash
+```
 # Run Piscis.
-$ piscis predict INPUT_PATH OUTPUT_PATH [OPTIONS]
+piscis predict INPUT_PATH OUTPUT_PATH [OPTIONS]
 
 # Train Piscis.
-$ piscis train MODEL_NAME DATASET_PATH [OPTIONS]
+piscis train MODEL_NAME DATASET_PATH [OPTIONS]
 ```
 To see the full list of options, run `piscis predict --help` or `piscis train --help`.
 
