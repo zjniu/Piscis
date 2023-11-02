@@ -1,6 +1,6 @@
 # Piscis
 
-<img src="docs/_static/logo.svg" width="250" alt="Piscis" align="right">
+<img src="docs/_static/logo.svg" width="40%" max-width="250" alt="Piscis" align="right">
 
 `piscis` is an automatic deep learning algorithm for spot detection, written in Python using the
 [JAX](https://github.com/google/jax) and [Flax](https://github.com/google/flax) libraries. It is named after the Latin
@@ -49,5 +49,5 @@ piscis train MODEL_NAME DATASET_PATH [OPTIONS]
 To see the full list of options, run `piscis predict --help` or `piscis train --help`.
 
 ## License
-`piscis` is licensed under the MIT License. The [LICENSE](LICENSE) file shall be included in all copies or substantial
-portions of the Software.
+`piscis` is licensed under the MIT License. The copyright and permission notices found in the [LICENSE](LICENSE) file
+shall be included in all copies or substantial portions of the Software.
