@@ -73,6 +73,8 @@ def main():
     train_parser.add_argument('--dilation-iterations', type=int, default=1,
                               help="Number of iterations to dilate ground truth labels to minimize class imbalance and "
                                    "misclassifications due to minor offsets.")
+    train_parser.add_argument('--max-distance', type=float, default=3.0,
+                              help="Maximum distance for matching predicted and ground truth displacement vectors.")
     train_parser.add_argument('--l2-loss-weight', type=float, default=0.25,
                               help="Weight for the L2 loss term.")
     train_parser.add_argument('--bce-loss-weight', type=float, default=0.0,

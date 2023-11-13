@@ -93,7 +93,7 @@ class Piscis:
             self.dilation_iterations = model_dict['dilation_iterations']
 
         # Define the model apply function.
-        kernel_size = (2 * self.dilation_iterations + 1,) * 2
+        kernel_size = (2 * self.dilation_iterations + 1, ) * 2
         self.apply = partial(apply, variables=self.variables, kernel_size=kernel_size)
 
     def predict(
@@ -412,7 +412,7 @@ class Piscis:
         Returns
         -------
         deltas : np.ndarray
-            Predicted subpixel displacements.
+            Predicted displacement vectors.
         pooled_labels : np.ndarray
             Predicted pooled labels.
         labels : np.ndarray, optional
@@ -453,7 +453,7 @@ class Piscis:
         Parameters
         ----------
         deltas : np.ndarray
-            Predicted subpixel displacements.
+            Predicted displacement vectors.
         pooled_labels : np.ndarray
             Predicted pooled labels.
         scales : np.ndarray
@@ -499,7 +499,7 @@ def apply(
     Returns
     -------
     deltas : jax.Array
-        Predicted subpixel displacements.
+        Predicted displacements vectors.
     pooled_labels : jax.Array
         Predicted pooled labels.
     labels : jax.Array

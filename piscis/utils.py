@@ -22,7 +22,7 @@ def compute_spot_coordinates(
     Parameters
     ----------
     deltas : np.ndarray
-        Subpixel displacements.
+        Displacement vectors.
     pooled_labels : np.ndarray
         Pooled labels.
     threshold : float
@@ -75,7 +75,7 @@ def scanned_sum_pool(
     Parameters
     ----------
     deltas : jax.Array
-        Subpixel displacements.
+        Displacement vectors.
     labels : jax.Array
         Binary labels.
     n_iter : int
@@ -108,7 +108,7 @@ def _scanned_sum_pool(
     Parameters
     ----------
     deltas : jax.Array
-        Subpixel displacements.
+        Displacement vectors.
     pooled_labels : jax.Array
         Pooled labels carried over from the previous iteration.
     kernel_size : Sequence[int]
@@ -137,7 +137,7 @@ def sum_pool(
     Parameters
     ----------
     deltas : jax.Array
-        Subpixel displacements.
+        Displacement vectors.
     labels : jax.Array
         Binary labels.
     kernel_size : Sequence[int], optional
@@ -236,7 +236,7 @@ def smooth_sum_pool(
     Parameters
     ----------
     deltas : jax.Array
-        Subpixel displacements.
+        Displacement vectors.
     labels : jax.Array
         Binary labels.
     sigma : jax.Array

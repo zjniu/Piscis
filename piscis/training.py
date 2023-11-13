@@ -108,7 +108,7 @@ def compute_training_metrics(
     Parameters
     ----------
     deltas_pred : jax.Array
-        Predicted subpixel displacements.
+        Predicted displacement vectors.
     labels_pred : jax.Array
         Predicted binary labels.
     batch : Dict[str, jax.Array]
@@ -116,7 +116,7 @@ def compute_training_metrics(
     dilation_iterations : int
         Number of iterations used to dilate ground truth labels.
     max_distance : float
-        Maximum distance for matching predicted and ground truth subpixel displacements.
+        Maximum distance for matching predicted and ground truth displacement vectors.
     loss_weights : Dict[str, float]
         Weights for terms in the overall loss function.
 
@@ -173,7 +173,7 @@ def loss_fn(
     dilation_iterations : int
         Number of iterations used to dilate ground truth labels.
     max_distance : float
-        Maximum distance for matching predicted and ground truth subpixel displacements.
+        Maximum distance for matching predicted and ground truth displacement vectors.
     loss_weights : Dict[str, float]
         Weights for terms in the overall loss function.
     train : bool
@@ -229,7 +229,7 @@ def train_step(
     dilation_iterations : int
         Number of iterations used to dilate ground truth labels.
     max_distance : float
-        Maximum distance for matching predicted and ground truth subpixel displacements.
+        Maximum distance for matching predicted and ground truth displacement vectors.
     loss_weights : Dict[str, float]
         Weights for terms in the overall loss function.
 
@@ -282,7 +282,7 @@ def train_epoch(
         Number of iterations to dilate ground truth labels to minimize class imbalance misclassifications due to minor
         offsets.
     max_distance : float
-        Maximum distance for matching predicted and ground truth subpixel displacements.
+        Maximum distance for matching predicted and ground truth displacement vectors.
     loss_weights : Dict[str, float]
         Weights for terms in the overall loss function.
     coords_max_length : int
@@ -440,7 +440,7 @@ def train_model(
         Number of iterations to dilate ground truth labels to minimize class imbalance and misclassifications due to
         minor offsets. Default is 1.
     max_distance : float, optional
-        Maximum distance for matching predicted and ground truth subpixel displacements. Default is 3.0.
+        Maximum distance for matching predicted and ground truth displacement vectors. Default is 3.0.
     loss_weights : Optional[Dict[str, float]], optional
         Weights for terms in the overall loss function. Supported terms are 'l2', 'bce', 'dice', and 'smoothf1'. If
         None, the loss weights {'l2': 0.25, 'smoothf1': 1.0} will be used. Default is None.

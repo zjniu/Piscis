@@ -23,17 +23,17 @@ def smoothf1_loss(
     Parameters
     ----------
     deltas_pred : jax.Array
-        Predicted subpixel displacements.
+        Predicted displacement vectors.
     labels_pred : jax.Array
         Predicted binary labels.
     deltas : jax.Array
-        Ground truth subpixel displacements.
+        Ground truth displacement vectors.
     labels : jax.Array
         Ground truth binary labels.
     dilation_iterations : int
         Number of iterations used to dilate ground truth labels.
     max_distance : float
-        Maximum distance for matching predicted and ground truth subpixel displacements.
+        Maximum distance for matching predicted and ground truth displacement vectors.
     epsilon : float, optional
         Small constant for numerical stability. Default is 1e-7.
 
