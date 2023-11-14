@@ -328,7 +328,7 @@ def train_epoch(
 
         # Extract and transform the current training batch.
         train_batch = {k: v[perm] for k, v in train_ds.items()}
-        train_batch = transform_batch(train_batch, coords_max_length, dilation_iterations)
+        train_batch = transform_batch(train_batch, dilation_iterations, coords_max_length)
 
         # Perform a training step and update metrics.
         state, metrics = train_step(state, train_batch, subkeys[2], dilation_iterations, max_distance, loss_weights)
@@ -353,7 +353,7 @@ def train_epoch(
 
         # Extract and transform the current validation batch.
         val_batch = {k: v[i:i + 1] for k, v in valid_ds.items()}
-        val_batch = transform_batch(val_batch, coords_max_length, dilation_iterations)
+        val_batch = transform_batch(val_batch, dilation_iterations, coords_max_length)
 
         # Compute and update validation metrics.
         _, (val_metrics, _) = loss_fn(state.params, state, val_batch, None,

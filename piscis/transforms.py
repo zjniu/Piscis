@@ -356,30 +356,26 @@ def standardize(
     return standardized_image
 
 
-def subpixel_distance_transform(
+def voronoi_transform(
         coords: Sequence[np.ndarray],
-        coords_pad_length: Optional[int] = None,
         output_size: Tuple[int, int] = (256, 256),
-        dy: float = 1.0,
-        dx: float = 1.0
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        dilation_iterations: int = 1,
+        coords_pad_length: Optional[int] = None
+) -> Tuple[np.ndarray, np.ndarray]:
 
-    """Apply the subpixel distance transform to a list of coordinates. Adapted from DeepCell Spots.
-
-    Generate an array where each pixel is a vector to the nearest point in `coords`.
+    """Transform a list of coordinates to generate ground truth binary labels and displacement vectors from each pixel
+    to the nearest point via a Voronoi tessellation. Adapted from DeepCell Spots.
 
     Parameters
     ----------
     coords : Sequence[np.ndarray]
         List of coordinates.
-    coords_pad_length : Optional[int], optional
-        Padded length of the coordinates sequence. Default is None.
     output_size : Tuple[int, int], optional
         Size of output arrays. Default is (256, 256).
-    dy : float, optional
-        Pixel size in the y-direction. Default is 1.0.
-    dx : float, optional
-        Pixel size in the x-direction. Default is 1.0.
+    dilation_iterations : int, optional
+        Number of iterations to dilate ground truth labels. Default is 1.
+    coords_pad_length : Optional[int], optional
+        Padded length of the coordinates sequence. Default is None.
 
     Returns
     -------
@@ -387,8 +383,6 @@ def subpixel_distance_transform(
         Array where each pixel is a vector to the nearest point in `coords`.
     labels : jax.Array
         Array where each pixel is a boolean for whether it contains a point in `coords`.
-    nearest : jax.Array
-        Array where each pixel is the index of the nearest point in `coords`.
 
     References
     ----------
@@ -396,56 +390,67 @@ def subpixel_distance_transform(
            https://github.com/vanvalenlab/deepcell-spots.
     """
 
-    # Initialize intermediate and output arrays.
+    # Initialize the deltas and labels arrays.
     batch_size = len(coords)
+    deltas = np.zeros((batch_size, *output_size, 2), dtype=float)
     labels = np.zeros((batch_size, *output_size), dtype=bool)
-    max_num_coords = np.max([len(coord) for coord in coords])
-    if (coords_pad_length is None) or (coords_pad_length < max_num_coords):
-        coords_pad_length = max_num_coords
-    subpixel_coords = np.zeros((batch_size, coords_pad_length, 2))
-    edt_indices = np.zeros((batch_size, 2) + output_size, dtype=int)
 
-    for i, coord in enumerate(coords):
+    # Determine the padded length of the coordinates sequence.
+    coords_max_length = np.max([len(coord) for coord in coords])
+    if (coords_pad_length is None) or (coords_pad_length < coords_max_length):
+        coords_pad_length = coords_max_length
+
+    # Generate ranges.
+    i, j = np.arange(output_size[0]), np.arange(output_size[1])
+
+    # Generate the dilation structuring element.
+    structure = ndimage.generate_binary_structure(2, 2)
+
+    for k, coord in enumerate(coords):
 
         # Remove coordinates outside the output arrays.
         coord = coord[(coord[:, 0] > -0.5) & (coord[:, 0] < output_size[0] - 0.5) &
                       (coord[:, 1] > -0.5) & (coord[:, 1] < output_size[1] - 0.5)]
 
+        # Generate the labels array.
+        rounded_coords = np.rint(coord).astype(int)
+        labels[k][rounded_coords[:, 0], rounded_coords[:, 1]] = True
+
+        # Apply the Euclidean distance transform on the labels array.
+        edt_indices = ndimage.distance_transform_edt(~labels[k], return_distances=False, return_indices=True)
+
         # Pad coordinates to the same length.
         padding = ((0, coords_pad_length - len(coord)), (0, 0))
-        subpixel_coords[i] = np.pad(coord, padding, constant_values=-1)
+        coord = np.pad(coord, padding, constant_values=-1)
 
-        # Create labels array.
-        unpadded_rounded_coords = np.rint(coord).astype(int)
-        labels[i][unpadded_rounded_coords[:, 0], unpadded_rounded_coords[:, 1]] = True
+        # Apply the vectorized distance transform function.
+        deltas[k] = vmap_vt(coord, edt_indices, i, j)
 
-        # Create Euclidean distance transform indices array.
-        edt_indices[i] = ndimage.distance_transform_edt(~labels[i], return_distances=False, return_indices=True,
-                                                        sampling=(dy, dx))
+        # Dilate the labels array.
+        labels[k] = ndimage.binary_dilation(labels[k], structure=structure, iterations=dilation_iterations)
 
-    # Prepare inputs for the vectorized distance transform function.
-    labels = np.expand_dims(labels, -1)
-    inputs = [subpixel_coords, edt_indices, dy, dx]
+    # Expand the shape of the labels array.
+    labels = np.expand_dims(labels, axis=-1)
 
-    # Apply the vectorized distance transform function.
-    deltas, nearest = vmap_sdt(inputs, np.arange(output_size[0]), np.arange(output_size[1]))
-
-    return deltas, labels, nearest
+    return deltas, labels
 
 
 @jit
-def _sdt(
-        inputs: Tuple[jax.Array, jax.Array, jax.Array, jax.Array],
+def _vt(
+        coord: jax.Array,
+        edt_index: jax.Array,
         i: int,
         j: int
 ):
 
-    """Subpixel distance transform for a single pixel.
+    """Voronoi transform for a single pixel.
 
     Parameters
     ----------
-    inputs : Tuple[jax.Array, jax.Array, jax.Array, jax.Array]
-        Tuple of inputs.
+    coord : jax.Array
+        List of coordinates.
+    edt_index : jax.Array
+        Euclidean distance transform index.
     i : int
         Pixel row index.
     j : int
@@ -455,19 +460,12 @@ def _sdt(
     -------
     delta : jax.Array
         Vector to the nearest point.
-    nearest : jax.Array
-        Index of the nearest point.
     """
 
-    subpixel_coords, edt_index, dy, dx = inputs
-    distances = jnp.linalg.norm(subpixel_coords - edt_index, axis=-1)
-    nearest = subpixel_coords[jnp.argmin(distances)]
-    delta_y = dy * (nearest[0] - i)
-    delta_x = dx * (nearest[1] - j)
-    delta = jnp.stack((delta_y, delta_x), axis=-1)
+    distances = jnp.linalg.norm(coord - edt_index, axis=-1)
+    delta = coord[jnp.argmin(distances)] - jnp.array((i, j))
 
-    return delta, nearest
+    return delta
 
 
-vmap_sdt = vmap(vmap(vmap(_sdt, in_axes=([None, 1, None, None], None, 0)), in_axes=([None, 1, None, None], 0, None)),
-                in_axes=([0, 0, None, None], None, None))
+vmap_vt = vmap(vmap(_vt, in_axes=(None, 1, None, 0)), in_axes=(None, 1, 0, None))

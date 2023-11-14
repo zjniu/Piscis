@@ -4,11 +4,10 @@ import numpy as np
 
 from jax import random
 from pathlib import Path
-from scipy import ndimage
 from typing import Dict, List, Optional, Tuple
 
 from piscis.utils import pad, remove_duplicate_coords
-from piscis.transforms import batch_adjust, RandomAugment, subpixel_distance_transform
+from piscis.transforms import batch_adjust, RandomAugment, voronoi_transform
 
 
 def generate_dataset(
@@ -219,8 +218,8 @@ def transform_subdataset(
 
 def transform_batch(
         batch: Dict,
-        coords_pad_length: Optional[int] = None,
-        dilation_iterations: int = 1
+        dilation_iterations: int = 1,
+        coords_pad_length: Optional[int] = None
 ):
 
     """Transform batch for model training and validation.
@@ -229,10 +228,10 @@ def transform_batch(
     ----------
     batch : Dict
         Batch dictionary.
-    coords_pad_length : Optional[int], optional
-        Padded length of the coordinates sequence. Default is None.
     dilation_iterations : int, optional
         Number of iterations to dilate ground truth labels. Default is 1.
+    coords_pad_length : Optional[int], optional
+        Padded length of the coordinates sequence. Default is None.
     """
 
     images = batch['images']
@@ -240,14 +239,7 @@ def transform_batch(
     output_shape = images.shape[1:3]
 
     # Apply subpixel distance transform.
-    deltas, labels, _ = subpixel_distance_transform(coords, coords_pad_length, output_shape)
-    labels = np.asarray(labels)
-
-    # Dilate labels if necessary.
-    if dilation_iterations > 0:
-        structure = np.ones((3, 3, 1), dtype=bool)
-        for i, label in enumerate(labels):
-            labels[i] = ndimage.binary_dilation(label, structure=structure, iterations=dilation_iterations)
+    deltas, labels = voronoi_transform(coords, output_shape, dilation_iterations, coords_pad_length)
 
     # Create the transformed batch dictionary.
     transformed_batch = {
