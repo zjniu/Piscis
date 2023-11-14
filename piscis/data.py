@@ -238,7 +238,7 @@ def transform_batch(
     coords = batch['coords']
     output_shape = images.shape[1:3]
 
-    # Apply subpixel distance transform.
+    # Apply the Voronoi transform.
     deltas, labels = voronoi_transform(coords, output_shape, dilation_iterations, coords_pad_length)
 
     # Create the transformed batch dictionary.
