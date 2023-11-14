@@ -369,7 +369,10 @@ class Piscis:
         """
 
         # Convert the input to a Dask array if necessary.
-        x = da.from_array(x)
+        if isinstance(x, xr.DataArray):
+            x = x.data
+        if not isinstance(x, da.Array):
+            x = da.from_array(x)
 
         # Get the number of input dimensions.
         ndim = x.ndim
