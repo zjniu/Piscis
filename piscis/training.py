@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from piscis.data import load_datasets, transform_batch, transform_subdataset
 from piscis.losses import dice_loss, masked_l2_loss, smoothf1_loss, weighted_bce_loss, wrap_loss_fn
-from piscis.models.spots import SpotsModel
+from piscis.models.spots import round_input_size, SpotsModel
 from piscis.optimizers import sgdw
 from piscis.paths import CHECKPOINTS_DIR, MODELS_DIR
 
@@ -460,6 +460,9 @@ def train_model(
     dataset['valid'] = transform_subdataset(dataset['valid'], input_size)
     coords_max_length = max([len(coords) for coords in dataset['train']['coords']] +
                             [len(coords) for coords in dataset['valid']['coords']])
+
+    # Round the input size.
+    input_size = round_input_size(input_size)
 
     # Create the random key.
     key = random.PRNGKey(random_seed)

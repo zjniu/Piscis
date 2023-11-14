@@ -18,7 +18,7 @@ from typing import Dict, Optional, Sequence, Tuple, Union
 
 from piscis import utils
 from piscis.downloads import download_pretrained_model
-from piscis.models.spots import SpotsModel
+from piscis.models.spots import round_input_size, SpotsModel
 from piscis.paths import CACHE_DIR, MODELS_DIR
 
 
@@ -89,6 +89,8 @@ class Piscis:
             if input_size is None:
                 input_size = model_dict['input_size']
                 input_size = (input_size['0'], input_size['1'])
+            else:
+                input_size = round_input_size(input_size)
             self.input_size = input_size
             self.dilation_iterations = model_dict['dilation_iterations']
 

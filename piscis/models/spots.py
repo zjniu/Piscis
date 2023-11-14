@@ -1,4 +1,5 @@
 import jax
+import numpy as np
 
 from flax import linen as nn
 from typing import Tuple, Union
@@ -6,7 +7,7 @@ from typing import Tuple, Union
 from piscis.networks.efficientnetv2 import build_efficientnetv2
 from piscis.networks.fpn import FPN
 
-blocks_args = [
+BLOCK_ARGS = [
     {
         "kernel_size": (3, 3),
         "num_repeat": 4,
@@ -78,7 +79,7 @@ class SpotsModel(nn.Module):
     ) -> Union[Tuple[jax.Array, jax.Array], Tuple[jax.Array, jax.Array, jax.Array]]:
 
         encoder = build_efficientnetv2(
-            blocks_args=blocks_args,
+            blocks_args=BLOCK_ARGS,
             model_name='EfficientNetV2XS',
             width_coefficient=1.0,
             depth_coefficient=1.0,
@@ -101,3 +102,27 @@ class SpotsModel(nn.Module):
             return deltas, labels, style
         else:
             return deltas, labels
+
+
+def round_input_size(input_size: Tuple[int, int]) -> Tuple[int, int]:
+
+    """Round SpotsModel input size.
+
+    Parameters
+    ----------
+    input_size : Tuple[int, int]
+        Input size.
+
+    Returns
+    -------
+    rounded_input_size : Tuple[int, int]
+        Rounded input size.
+    """
+
+    stride_scale = np.prod([block['strides'] for block in BLOCK_ARGS])
+    pool_scale = 2 ** sum((0 if block['pool'] is None else 1 for block in BLOCK_ARGS if block['pool']))
+    scale = stride_scale * pool_scale
+    rounded_input_size = scale * np.rint(np.array(input_size) / scale).astype(int)
+    rounded_input_size = (int(rounded_input_size[0]), int(rounded_input_size[1]))
+
+    return rounded_input_size
