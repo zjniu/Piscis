@@ -14,7 +14,8 @@ from tqdm.auto import tqdm
 from typing import Any, Dict, List, Optional, Tuple
 
 from piscis.data import load_datasets, transform_batch, transform_subdataset
-from piscis.losses import dice_loss, masked_l2_loss, smoothf1_loss, weighted_bce_loss, wrap_loss_fn
+from piscis.losses import (dice_loss, masked_l2_loss, smoothf1_loss, weighted_bce_loss, weighted_binary_focal_loss,
+                           wrap_loss_fn)
 from piscis.models.spots import round_input_size, SpotsModel
 from piscis.optimizers import sgdw
 from piscis.paths import CHECKPOINTS_DIR, MODELS_DIR
@@ -136,6 +137,8 @@ def compute_training_metrics(
         metrics['bce'] = wrap_loss_fn(weighted_bce_loss)(labels_pred, batch['labels'])
     if 'dice' in loss_weights:
         metrics['dice'] = wrap_loss_fn(dice_loss)(labels_pred, batch['labels'])
+    if 'focal' in loss_weights:
+        metrics['focal'] = wrap_loss_fn(weighted_binary_focal_loss)(labels_pred, batch['labels'])
     if 'smoothf1' in loss_weights:
         metrics['smoothf1'] = wrap_loss_fn(smoothf1_loss)(deltas_pred, labels_pred, batch['deltas'], batch['labels'],
                                                           dilation_iterations, max_distance)
@@ -442,8 +445,8 @@ def train_model(
     max_distance : float, optional
         Maximum distance for matching predicted and ground truth displacement vectors. Default is 3.0.
     loss_weights : Optional[Dict[str, float]], optional
-        Weights for terms in the overall loss function. Supported terms are 'l2', 'bce', 'dice', and 'smoothf1'. If
-        None, the loss weights {'l2': 0.25, 'smoothf1': 1.0} will be used. Default is None.
+        Weights for terms in the overall loss function. Supported terms are 'l2', 'bce', 'focal', 'dice', and
+        'smoothf1'. If None, the loss weights {'l2': 0.25, 'smoothf1': 1.0} will be used. Default is None.
 
     Raises
     ------

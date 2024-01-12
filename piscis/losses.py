@@ -443,6 +443,7 @@ def binary_focal_loss(
         y_pred: jax.Array,
         y: jax.Array,
         gamma: float = 2,
+        pos_weight: Union[float, jax.Array] = 1.0,
         epsilon: float = 1e-7,
         reduction: Optional[str] = 'mean'
 ) -> jax.Array:
@@ -457,6 +458,8 @@ def binary_focal_loss(
         Ground truth binary labels.
     gamma : float, optional
         Hyperparameter for computing the binary focal loss. Default is 2.
+    pos_weight : Union[float, jax.Array], optional
+        Weight for positive class. Default is 1.0.
     epsilon : float, optional
         Small constant for numerical stability. Default is 1e-7.
     reduction : Optional[str], optional
@@ -473,9 +476,43 @@ def binary_focal_loss(
            conference on computer vision. 2017.
     """
 
-    bf = -((1 - y_pred) ** gamma * jnp.log(y_pred + epsilon) * y +
-           y_pred ** gamma * jnp.log((1 - y_pred) + epsilon) * (1 - y))
+    bce = bce_loss(y_pred, y, pos_weight=pos_weight, epsilon=epsilon, reduction=reduction)
+    p_t = y_pred * y + (1 - y_pred) * (1 - y)
+    bf = bce * (1 - p_t) ** gamma
     bf = reduce_loss(bf, reduction=reduction)
+
+    return bf
+
+
+def weighted_binary_focal_loss(
+        y_pred: jax.Array,
+        y: jax.Array,
+        alpha: float = 1.0,
+        epsilon: float = 1e-7,
+        reduction: Optional[str] = 'mean'
+) -> jax.Array:
+
+    """Compute the weighted binary focal loss.
+
+    y_pred : jax.Array
+        Predicted binary labels.
+    y : jax.Array
+        Ground truth binary labels.
+    alpha : float, optional
+        Exponent factor applied to the inverse class weight. Default is 1.0.
+    epsilon : float, optional
+        Small constant for numerical stability. Default is 1e-7.
+    reduction : Optional[str], optional
+        Loss reduction method. Default is 'mean'.
+
+    Returns
+    -------
+    bce : jax.Array
+        Weighted binary focal loss.
+    """
+
+    pos_weight = _inverse_class_weight(y, alpha=alpha, epsilon=epsilon)
+    bf = binary_focal_loss(y_pred, y, pos_weight=pos_weight, epsilon=epsilon, reduction=reduction)
 
     return bf
 

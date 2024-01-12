@@ -81,6 +81,8 @@ def main():
                               help="Weight for the bce loss term.")
     train_parser.add_argument('--dice-loss-weight', type=float, default=0.0,
                               help="Weight for the dice loss term.")
+    train_parser.add_argument('--focal-loss-weight', type=float, default=0.0,
+                              help="Weight for the focal loss term.")
     train_parser.add_argument('--smoothf1-loss-weight', type=float, default=1.0,
                               help="Weight for the smoothf1 loss term.")
 
@@ -96,6 +98,8 @@ def main():
             loss_weights['bce'] = args.bce_loss_weight
         if args.dice_loss_weight > 0:
             loss_weights['dice'] = args.dice_loss_weight
+        if args.focal_loss_weight > 0:
+            loss_weights['focal'] = args.focal_loss_weight
         if args.smoothf1_loss_weight > 0:
             loss_weights['smoothf1'] = args.smoothf1_loss_weight
 
