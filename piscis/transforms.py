@@ -426,8 +426,9 @@ def voronoi_transform(
         # Apply the vectorized distance transform function.
         deltas[k] = vmap_vt(coord, edt_indices, i, j)
 
-        # Dilate the labels array.
-        labels[k] = ndimage.binary_dilation(labels[k], structure=structure, iterations=dilation_iterations)
+        # Dilate the labels array if necessary.
+        if dilation_iterations > 0:
+            labels[k] = ndimage.binary_dilation(labels[k], structure=structure, iterations=dilation_iterations)
 
     # Expand the shape of the labels array.
     labels = np.expand_dims(labels, axis=-1)
