@@ -2,12 +2,12 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
-import orbax.checkpoint
+import orbax.checkpoint as ocp
 
 from abc import ABC
 from flax import serialization
 from flax.core import frozen_dict
-from flax.training import orbax_utils, train_state
+from flax.training import train_state
 from functools import partial
 from jax import jit, random, value_and_grad
 from tqdm.auto import tqdm
@@ -492,16 +492,11 @@ def train_model(
     model_path = MODELS_DIR / model_name
 
     # Create a checkpoint manager.
-    mgr_options = orbax.checkpoint.CheckpointManagerOptions(max_to_keep=2)
-    checkpointers = {
-        'state': orbax.checkpoint.PyTreeCheckpointer(),
-        'batch_metrics_log': orbax.checkpoint.Checkpointer(orbax.checkpoint.JsonCheckpointHandler()),
-        'epoch_metrics_log': orbax.checkpoint.Checkpointer(orbax.checkpoint.JsonCheckpointHandler())
-    }
+    mgr_options = ocp.CheckpointManagerOptions(max_to_keep=2)
     checkpoint_path.mkdir(parents=True, exist_ok=True)
-    ckpt_mgr = orbax.checkpoint.CheckpointManager(
+    ckpt_mgr = ocp.CheckpointManager(
         directory=checkpoint_path,
-        checkpointers=checkpointers,
+        item_names=('state', 'batch_metrics_log', 'epoch_metrics_log'),
         options=mgr_options
     )
 
@@ -525,11 +520,13 @@ def train_model(
     latest_epoch = ckpt_mgr.latest_step()
     if latest_epoch is not None:
         print(f'Loading latest checkpoint from {checkpoint_path}...')
-        restore_args = orbax_utils.restore_args_from_target(state, mesh=None)
         checkpoint = ckpt_mgr.restore(
             step=latest_epoch,
-            items={'state': state, 'batch_metrics_log': batch_metrics_log, 'epoch_metrics_log': epoch_metrics_log},
-            restore_kwargs={'state': {'restore_args': restore_args}}
+            args=ocp.args.Composite(
+                state=ocp.args.StandardRestore(state),
+                batch_metrics_log=ocp.args.JsonRestore(),
+                epoch_metrics_log=ocp.args.JsonRestore()
+            )
         )
         state = checkpoint['state']
         batch_metrics_log = checkpoint['batch_metrics_log']
@@ -547,12 +544,15 @@ def train_model(
         epoch_metrics_log += [epoch_metrics]
 
         # Save a checkpoint.
-        save_args = orbax_utils.save_args_from_target(state)
         ckpt_mgr.save(
             step=state.epoch,
-            items={'state': state, 'batch_metrics_log': batch_metrics_log, 'epoch_metrics_log': epoch_metrics_log},
-            save_kwargs={'state': {'save_args': save_args}}
+            args=ocp.args.Composite(
+                state=ocp.args.StandardSave(state),
+                batch_metrics_log=ocp.args.JsonSave(batch_metrics_log),
+                epoch_metrics_log=ocp.args.JsonSave(epoch_metrics_log)
+            )
         )
+        ckpt_mgr.wait_until_finished()
 
     # Save the model.
     model_dict = {
