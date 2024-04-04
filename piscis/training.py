@@ -6,7 +6,6 @@ import orbax.checkpoint as ocp
 
 from abc import ABC
 from flax import serialization
-from flax.core import frozen_dict
 from flax.training import train_state
 from functools import partial
 from jax import jit, random, value_and_grad
@@ -79,8 +78,6 @@ def create_train_state(
     # Initialize parameters.
     if variables is None:
         variables = model.init(subkey, np.ones((1, *input_size, 1)), train=False)
-    else:
-        variables = frozen_dict.freeze(variables)
 
     # Create a TrainState object.
     state = TrainState.create(
@@ -350,35 +347,36 @@ def train_epoch(
         pbar.update(1)
         pbar.set_postfix_str(summary)
 
-    val_batch_metrics = []
-    val_epoch_metrics = []
-    for i in range(valid_ds_size):
+    if valid_ds_size:
+        val_batch_metrics = []
+        val_epoch_metrics = []
+        for i in range(valid_ds_size):
 
-        # Extract and transform the current validation batch.
-        val_batch = {k: v[i:i + 1] for k, v in valid_ds.items()}
-        val_batch = transform_batch(val_batch, dilation_iterations, coords_max_length)
+            # Extract and transform the current validation batch.
+            val_batch = {k: v[i:i + 1] for k, v in valid_ds.items()}
+            val_batch = transform_batch(val_batch, dilation_iterations, coords_max_length)
 
-        # Compute and update validation metrics.
-        _, (val_metrics, _) = loss_fn(state.params, state, val_batch, None,
-                                      dilation_iterations, max_distance, loss_weights, train=False)
-        val_metrics = {f'val_{k}': float(v) for k, v in val_metrics.items()}
-        val_batch_metrics.append(val_metrics)
+            # Compute and update validation metrics.
+            _, (val_metrics, _) = loss_fn(state.params, state, val_batch, None,
+                                          dilation_iterations, max_distance, loss_weights, train=False)
+            val_metrics = {f'val_{k}': float(v) for k, v in val_metrics.items()}
+            val_batch_metrics.append(val_metrics)
 
-        # Compute mean validation metrics.
-        val_epoch_metrics = {
-            k: np.mean([metrics[k] for metrics in val_batch_metrics]).astype(float)
-            for k in val_batch_metrics[0]}
+            # Compute mean validation metrics.
+            val_epoch_metrics = {
+                k: np.mean([metrics[k] for metrics in val_batch_metrics]).astype(float)
+                for k in val_batch_metrics[0]}
 
-        # Update the progress bar.
-        val_summary = f'''(valid) loss: {val_epoch_metrics['val_loss']:> 6.4f}, 
-                          {', '.join([f"val_{k}: {val_epoch_metrics[f'val_{k}']:> 6.4f}" for k in loss_weights])} | 
-                          {summary}'''
-        pbar.set_postfix_str(val_summary)
+            # Update the progress bar.
+            val_summary = f'''(valid) loss: {val_epoch_metrics['val_loss']:> 6.4f}, 
+                              {', '.join([f"val_{k}: {val_epoch_metrics[f'val_{k}']:> 6.4f}" for k in loss_weights])} | 
+                              {summary}'''
+            pbar.set_postfix_str(val_summary)
+
+        epoch_metrics = epoch_metrics | val_epoch_metrics
 
     pbar.close()
 
-    # Compute mean training and validation metrics.
-    epoch_metrics = epoch_metrics | val_epoch_metrics
     epoch_metrics['learning_rate'] = epoch_learning_rate
 
     # Update the training state.
@@ -390,6 +388,7 @@ def train_epoch(
 def train_model(
         model_name: str,
         dataset_path: str,
+        pretrained_model_name: Optional[str] = None,
         adjustment: Optional[str] = 'standardize',
         input_size: Tuple[int, int] = (256, 256),
         random_seed: int = 0,
@@ -415,6 +414,8 @@ def train_model(
         Name of a new or existing model.
     dataset_path : str
         Path to the directory containing training and validation datasets.
+    pretrained_model_name : Optional[str], optional
+        Name of a pretrained model to initialize the weights. Default is None.
     adjustment : Optional[str], optional
         Adjustment type applied to images. Supported types are 'normalize' and 'standardize'. Default is 'standardize'.
     input_size : Tuple[int, int], optional
@@ -460,7 +461,8 @@ def train_model(
     # Load datasets.
     print('Loading datasets...')
     dataset = load_datasets(dataset_path, adjustment, load_train=True, load_valid=True, load_test=False)
-    dataset['valid'] = transform_subdataset(dataset['valid'], input_size)
+    if len(dataset['valid']['images']):
+        dataset['valid'] = transform_subdataset(dataset['valid'], input_size)
     coords_max_length = max([len(coords) for coords in dataset['train']['coords']] +
                             [len(coords) for coords in dataset['valid']['coords']])
 
@@ -501,9 +503,14 @@ def train_model(
     )
 
     # Load existing model weights.
-    if (next(checkpoint_path.iterdir(), None) is None) and model_path.is_file():
-        print(f'Loading existing model weights from {model_path}...')
-        with open(model_path, 'rb') as f_model:
+    if pretrained_model_name is None:
+        existing_model_path = model_path
+    else:
+        existing_model_path = MODELS_DIR / pretrained_model_name
+
+    if (next(checkpoint_path.iterdir(), None) is None) and existing_model_path.is_file():
+        print(f'Loading existing model weights from {existing_model_path}...')
+        with open(existing_model_path, 'rb') as f_model:
             variables = serialization.from_bytes(target=None, encoded_bytes=f_model.read())['variables']
     else:
         variables = None
