@@ -50,7 +50,6 @@ class Piscis:
             self,
             model_name: str = '20230905',
             batch_size: int = 4,
-            cache: bool = True,
             input_size: Optional[Tuple[int, int]] = None
     ) -> None:
 
@@ -62,8 +61,6 @@ class Piscis:
             Model name. Default is '20230905'.
         batch_size : int, optional
             Batch size for the CNN. Default is 4.
-        cache : bool, optional
-            Whether to use compilation cache. Default is True.
         input_size : Optional[Tuple[int, int]], optional
             Input size for the CNN. If None, it is obtained from the model dictionary. Default is None.
         """
@@ -72,9 +69,8 @@ class Piscis:
         if xla_bridge.get_backend().platform == 'cpu':
             batch_size = 1
 
-        # Initialize the compilation cache.
-        if cache:
-            compilation_cache.initialize_cache(CACHE_DIR)
+        # Set the compilation cache directory.
+        compilation_cache.set_cache_dir(CACHE_DIR)
 
         # Load the model.
         self.model_name = model_name

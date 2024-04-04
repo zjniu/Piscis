@@ -9,6 +9,7 @@ from flax import serialization
 from flax.training import train_state
 from functools import partial
 from jax import jit, random, value_and_grad
+from jax._src import compilation_cache
 from tqdm.auto import tqdm
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -17,7 +18,7 @@ from piscis.losses import (dice_loss, masked_l2_loss, smoothf1_loss, weighted_bc
                            wrap_loss_fn)
 from piscis.models.spots import round_input_size, SpotsModel
 from piscis.optimizers import sgdw
-from piscis.paths import CHECKPOINTS_DIR, MODELS_DIR
+from piscis.paths import CACHE_DIR, CHECKPOINTS_DIR, MODELS_DIR
 
 
 class TrainState(train_state.TrainState, ABC):
@@ -40,6 +41,7 @@ class TrainState(train_state.TrainState, ABC):
     epoch: Any
 
 
+@partial(jit, static_argnums=(2, 3))
 def create_train_state(
         key: jax.Array,
         input_size: Tuple[int, int],
@@ -457,6 +459,9 @@ def train_model(
 
     if warmup_fraction + decay_fraction > 1:
         raise ValueError("warmup_fraction + decay_fraction cannot be greater 1.")
+
+    # Set the compilation cache directory.
+    compilation_cache.set_cache_dir(CACHE_DIR)
 
     # Load datasets.
     print('Loading datasets...')
