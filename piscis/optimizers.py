@@ -59,7 +59,7 @@ def sgdw(
             else optax.identity()
         ),
         optax.add_decayed_weights(weight_decay, mask),
-        optax._src.alias._scale_by_learning_rate(learning_rate),
+        optax.scale_by_learning_rate(learning_rate),
     )
 
     return tx
