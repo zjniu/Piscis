@@ -54,7 +54,7 @@ def generate_dataset(
     tiles2 = tiles1.import_data(coords, 'coords')
     nonempty_tiles = [(image.compute(), coord)
                       for tile1, tile2 in zip(tiles1[tiles1.nonempty_indices], tiles2[tiles2.nonempty_indices])
-                      for image, coord in zip(tile1, tile2) if len(coord) > min_spots]
+                      for image, coord in zip(tile1, tile2) if len(coord) >= min_spots]
     tiled_images_list, tiled_coords_list = zip(*nonempty_tiles)
     tiled_images = np.empty(len(tiled_images_list), dtype=object)
     tiled_coords = np.empty(len(tiled_coords_list), dtype=object)
