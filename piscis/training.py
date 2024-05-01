@@ -313,15 +313,22 @@ def train_epoch(
 
     train_ds_size = len(train_ds['images'])
     valid_ds_size = len(valid_ds['images'])
-    n_steps = train_ds_size // batch_size
+    small_train_ds = train_ds_size < batch_size
+    if small_train_ds:
+        n_steps = 1
+    else:
+        n_steps = train_ds_size // batch_size
 
     # Initialize the progress bar.
     pbar = tqdm(total=n_steps)
 
     # Shuffle the training set.
-    perms = random.permutation(subkeys[1], train_ds_size)
-    perms = perms[:n_steps * batch_size]
-    perms = perms.reshape((n_steps, batch_size))
+    if small_train_ds:
+        perms = random.randint(subkeys[1], (n_steps, batch_size), 0, train_ds_size)
+    else:
+        perms = random.permutation(subkeys[1], train_ds_size)
+        perms = perms[:n_steps * batch_size]
+        perms = perms.reshape((n_steps, batch_size))
 
     batch_metrics = []
     epoch_metrics = {}
