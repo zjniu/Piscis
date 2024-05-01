@@ -41,7 +41,7 @@ class TrainState(train_state.TrainState, ABC):
     epoch: Any
 
 
-@partial(jit, static_argnums=(2, 3))
+@partial(jit, static_argnums=(1, 2, 3))
 def create_train_state(
         key: jax.Array,
         input_size: Tuple[int, int],
