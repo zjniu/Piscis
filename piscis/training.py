@@ -351,8 +351,10 @@ def train_epoch(
         epoch_metrics['n_steps'] = n_steps
 
         # Update the progress bar.
-        summary = f'''(train) loss: {epoch_metrics['loss']:> 6.4f}, 
-                      {', '.join([f'{k}: {epoch_metrics[k]:> 6.4f}' for k in loss_weights])}'''
+        summary = (
+            f'''(train) loss: {epoch_metrics['loss']:> 6.4f}, '''
+            f'''{', '.join([f'{k}: {epoch_metrics[k]:> 6.4f}' for k in loss_weights])}'''
+        )
         pbar.update(1)
         pbar.set_postfix_str(summary)
 
@@ -377,9 +379,11 @@ def train_epoch(
                 for k in val_batch_metrics[0]}
 
             # Update the progress bar.
-            val_summary = f'''(valid) loss: {val_epoch_metrics['val_loss']:> 6.4f}, 
-                              {', '.join([f"val_{k}: {val_epoch_metrics[f'val_{k}']:> 6.4f}" for k in loss_weights])} | 
-                              {summary}'''
+            val_summary = (
+                f'''(valid) loss: {val_epoch_metrics['val_loss']: > 6.4f}, '''
+                f'''{', '.join([f"val_{k}: {val_epoch_metrics[f'val_{k}']: > 6.4f}" for k in loss_weights])} | '''
+                f'''{summary}'''
+            )
             pbar.set_postfix_str(val_summary)
 
         epoch_metrics = epoch_metrics | val_epoch_metrics
