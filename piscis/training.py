@@ -412,7 +412,8 @@ def train_model(
         decay_factor: float = 0.5,
         dilation_iterations: int = 1,
         max_distance: float = 3.0,
-        loss_weights: Optional[Dict[str, float]] = None
+        loss_weights: Optional[Dict[str, float]] = None,
+        save_checkpoints: bool = True
 ) -> None:
 
     """Train a SpotsModel.
@@ -457,6 +458,8 @@ def train_model(
     loss_weights : Optional[Dict[str, float]], optional
         Weights for terms in the overall loss function. Supported terms are 'l2', 'bce', 'focal', 'dice', and
         'smoothf1'. If None, the loss weights {'l2': 0.25, 'smoothf1': 1.0} will be used. Default is None.
+    save_checkpoints : bool, optional
+        Whether to save checkpoints during training. Default is True.
 
     Raises
     ------
@@ -562,16 +565,17 @@ def train_model(
         batch_metrics_log += batch_metrics
         epoch_metrics_log += [epoch_metrics]
 
-        # Save a checkpoint.
-        ckpt_mgr.save(
-            step=state.epoch,
-            args=ocp.args.Composite(
-                state=ocp.args.StandardSave(state),
-                batch_metrics_log=ocp.args.JsonSave(batch_metrics_log),
-                epoch_metrics_log=ocp.args.JsonSave(epoch_metrics_log)
+        # Save a checkpoint if necessary.
+        if save_checkpoints:
+            ckpt_mgr.save(
+                step=state.epoch,
+                args=ocp.args.Composite(
+                    state=ocp.args.StandardSave(state),
+                    batch_metrics_log=ocp.args.JsonSave(batch_metrics_log),
+                    epoch_metrics_log=ocp.args.JsonSave(epoch_metrics_log)
+                )
             )
-        )
-        ckpt_mgr.wait_until_finished()
+            ckpt_mgr.wait_until_finished()
 
     # Save the model.
     model_dict = {
