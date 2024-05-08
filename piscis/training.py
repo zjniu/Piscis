@@ -299,7 +299,7 @@ def train_epoch(
         Dictionary of metrics computed for epoch.
     """
 
-    print(f'Epoch {state.epoch + 1}:')
+    print(f'Epoch {state.epoch + 1}: ')
 
     # Update the learning rate.
     state.opt_state.hyperparams['learning_rate'] = jnp.array(epoch_learning_rate, dtype=float)
@@ -351,8 +351,8 @@ def train_epoch(
 
         # Update the progress bar.
         summary = (
-            f'''(train) loss: {epoch_metrics['loss']:> 6.4f}, '''
-            f'''{', '.join([f'{k}: {epoch_metrics[k]:> 6.4f}' for k in loss_weights])}'''
+            f'''(train) loss: {epoch_metrics['loss']: > 6.4f}, '''
+            f'''{', '.join([f'{k}: {epoch_metrics[k]: > 6.4f}' for k in loss_weights])}'''
         )
         pbar.update(1)
         pbar.set_postfix_str(summary)
