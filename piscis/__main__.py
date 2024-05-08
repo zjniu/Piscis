@@ -45,6 +45,8 @@ def main():
                               help="Name of a new or existing model.")
     train_parser.add_argument('dataset_path', type=str,
                               help="Path to the directory containing training and validation datasets.")
+    train_parser.add_argument('--pretrained-model-name', type=str, default=None,
+                              help="Name of a pretrained model to initialize the weights.")
     train_parser.add_argument('--adjustment', type=str, default='standardize',
                               help="Adjustment type applied to images. Supported types are 'normalize' and "
                                    "'standardize'.")
@@ -85,6 +87,8 @@ def main():
                               help="Weight for the focal loss term.")
     train_parser.add_argument('--smoothf1-loss-weight', type=float, default=1.0,
                               help="Weight for the smoothf1 loss term.")
+    train_parser.add_argument('--save-checkpoints', default=True, action=argparse.BooleanOptionalAction,
+                              help="Save checkpoints during training.")
 
     args = parser.parse_args()
 
@@ -107,6 +111,7 @@ def main():
         train_model(
             model_name=args.model_name,
             dataset_path=args.dataset_path,
+            pretrained_model_name=args.pretrained_model_name,
             adjustment=args.adjustment,
             input_size=args.input_size,
             random_seed=args.random_seed,
@@ -121,7 +126,8 @@ def main():
             decay_factor=args.decay_factor,
             dilation_iterations=args.dilation_iterations,
             max_distance=args.max_distance,
-            loss_weights=loss_weights
+            loss_weights=loss_weights,
+            save_checkpoints=args.save_checkpoints
         )
 
     elif args.command == 'predict':
