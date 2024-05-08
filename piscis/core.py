@@ -31,8 +31,6 @@ class Piscis:
         Model name.
     batch_size : int
         Batch size for the CNN.
-    model : SpotsModel
-        Instance of the SpotsModel class.
     variables : Dict
         Model variables.
     adjustment : str
@@ -42,7 +40,7 @@ class Piscis:
     dilation_iterations : int
         Number of iterations used to dilate ground truth labels during training.
     apply : Callable
-        Compiled model apply function.
+        Model apply function.
     """
 
     def __init__(
