@@ -17,7 +17,7 @@ from piscis.losses import (dice_loss, masked_l2_loss, smoothf1_loss, weighted_bc
                            wrap_loss_fn)
 from piscis.models.spots import round_input_size, SpotsModel
 from piscis.optimizers import sgdw
-from piscis.paths import CACHE_DIR, CHECKPOINTS_DIR, MODELS_DIR
+from piscis.paths import CHECKPOINTS_DIR, MODELS_DIR
 
 
 class TrainState(train_state.TrainState, ABC):

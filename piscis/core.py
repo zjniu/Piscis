@@ -18,7 +18,7 @@ from typing import Dict, Optional, Sequence, Tuple, Union
 from piscis import utils
 from piscis.downloads import download_pretrained_model
 from piscis.models.spots import round_input_size, SpotsModel
-from piscis.paths import CACHE_DIR, MODELS_DIR
+from piscis.paths import MODELS_DIR
 
 
 class Piscis:
