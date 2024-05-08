@@ -11,7 +11,6 @@ from deeptile.extensions import stitch
 from flax import serialization
 from functools import partial
 from jax import jit
-from jax._src import compilation_cache
 from jax.lib import xla_bridge
 from skimage.transform import resize
 from typing import Dict, Optional, Sequence, Tuple, Union
@@ -68,9 +67,6 @@ class Piscis:
         # Set the batch size to 1 if running on CPU.
         if xla_bridge.get_backend().platform == 'cpu':
             batch_size = 1
-
-        # Set the compilation cache directory.
-        compilation_cache.set_cache_dir(CACHE_DIR)
 
         # Load the model.
         self.model_name = model_name

@@ -9,7 +9,6 @@ from flax import serialization
 from flax.training import train_state
 from functools import partial
 from jax import jit, random, value_and_grad
-from jax._src import compilation_cache
 from tqdm.auto import tqdm
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -473,9 +472,6 @@ def train_model(
 
     if warmup_fraction + decay_fraction > 1:
         raise ValueError("warmup_fraction + decay_fraction cannot be greater 1.")
-
-    # Set the compilation cache directory.
-    compilation_cache.set_cache_dir(CACHE_DIR)
 
     # Load datasets.
     print('Loading datasets...')
