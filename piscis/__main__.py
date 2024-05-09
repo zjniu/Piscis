@@ -45,8 +45,8 @@ def main():
                               help="Name of a new or existing model.")
     train_parser.add_argument('dataset_path', type=str,
                               help="Path to the directory containing training and validation datasets.")
-    train_parser.add_argument('--pretrained-model-name', type=str, default=None,
-                              help="Name of a pretrained model to initialize the weights.")
+    train_parser.add_argument('--initial-model-name', type=str, default=None,
+                              help="Name of an existing model to initialize the weights.")
     train_parser.add_argument('--adjustment', type=str, default='standardize',
                               help="Adjustment type applied to images. Supported types are 'normalize' and "
                                    "'standardize'.")
@@ -111,7 +111,7 @@ def main():
         train_model(
             model_name=args.model_name,
             dataset_path=args.dataset_path,
-            pretrained_model_name=args.pretrained_model_name,
+            initial_model_name=args.initial_model_name,
             adjustment=args.adjustment,
             input_size=args.input_size,
             random_seed=args.random_seed,

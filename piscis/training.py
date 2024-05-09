@@ -400,7 +400,7 @@ def train_epoch(
 def train_model(
         model_name: str,
         dataset_path: str,
-        pretrained_model_name: Optional[str] = None,
+        initial_model_name: Optional[str] = None,
         adjustment: Optional[str] = 'standardize',
         input_size: Tuple[int, int] = (256, 256),
         random_seed: int = 0,
@@ -427,8 +427,8 @@ def train_model(
         Name of a new or existing model.
     dataset_path : str
         Path to the directory containing training and validation datasets.
-    pretrained_model_name : Optional[str], optional
-        Name of a pretrained model to initialize the weights. Default is None.
+    initial_model_name : Optional[str], optional
+        Name of an existing model to initialize the weights. Default is None.
     adjustment : Optional[str], optional
         Adjustment type applied to images. Supported types are 'normalize' and 'standardize'. Default is 'standardize'.
     input_size : Tuple[int, int], optional
@@ -517,21 +517,20 @@ def train_model(
         options=mgr_options
     )
 
-    # Load existing model weights.
-    if pretrained_model_name is None:
-        existing_model_path = model_path
-    else:
-        existing_model_path = MODELS_DIR / pretrained_model_name
-
-    if (next(checkpoint_path.iterdir(), None) is None) and existing_model_path.is_file():
-        print(f'Loading existing model weights from {existing_model_path}...')
-        with open(existing_model_path, 'rb') as f_model:
-            variables = serialization.from_bytes(target=None, encoded_bytes=f_model.read())['variables']
+    # Initialize model weights.
+    if initial_model_name:
+        initial_model_path = MODELS_DIR / initial_model_name
+        if initial_model_path.is_file():
+            print(f'Initializing model weights from {initial_model_path}...')
+            with open(initial_model_path, 'rb') as f_model:
+                variables = serialization.from_bytes(target=None, encoded_bytes=f_model.read())['variables']
+        else:
+            variables = None
     else:
         variables = None
 
-    # Create a new training state.
-    print('Creating new TrainState...')
+    # Create the training state.
+    print('Creating TrainState...')
     state = create_train_state(key, input_size, dropout_rate, tx, variables)
 
     # Create lists for storing batch and epoch metrics.
@@ -539,20 +538,21 @@ def train_model(
     epoch_metrics_log = []
 
     # Load the latest checkpoint.
-    latest_epoch = ckpt_mgr.latest_step()
-    if latest_epoch is not None:
-        print(f'Loading latest checkpoint from {checkpoint_path}...')
-        checkpoint = ckpt_mgr.restore(
-            step=latest_epoch,
-            args=ocp.args.Composite(
-                state=ocp.args.StandardRestore(state),
-                batch_metrics_log=ocp.args.JsonRestore(),
-                epoch_metrics_log=ocp.args.JsonRestore()
+    if initial_model_name is None:
+        latest_step = ckpt_mgr.latest_step()
+        if latest_step is not None:
+            print(f'Loading latest checkpoint from {checkpoint_path}...')
+            checkpoint = ckpt_mgr.restore(
+                step=latest_step,
+                args=ocp.args.Composite(
+                    state=ocp.args.StandardRestore(state),
+                    batch_metrics_log=ocp.args.JsonRestore(),
+                    epoch_metrics_log=ocp.args.JsonRestore()
+                )
             )
-        )
-        state = checkpoint['state']
-        batch_metrics_log = checkpoint['batch_metrics_log']
-        epoch_metrics_log = checkpoint['epoch_metrics_log']
+            state = checkpoint['state']
+            batch_metrics_log = checkpoint['batch_metrics_log']
+            epoch_metrics_log = checkpoint['epoch_metrics_log']
 
     for epoch_learning_rate in learning_rate_schedule:
 
