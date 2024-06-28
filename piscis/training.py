@@ -40,11 +40,12 @@ class TrainState(train_state.TrainState, ABC):
     epoch: Any
 
 
-@partial(jit, static_argnums=(1, 2, 3))
+@partial(jit, static_argnums=(1, 2, 3, 4))
 def create_train_state(
         key: jax.Array,
         input_size: Tuple[int, int],
         dropout_rate: float,
+        channels: int,
         tx: optax.GradientTransformation,
         variables: Optional[Dict] = None
 ) -> TrainState:
@@ -59,6 +60,8 @@ def create_train_state(
         Size of the input images used for training.
     dropout_rate : float
         Dropout rate at skip connections.
+    channels : int
+        Number of image channels.
     tx : optax.GradientTransformation
         Optax optimizer used for training.
     variables : Optional[Dict]
@@ -78,7 +81,7 @@ def create_train_state(
 
     # Initialize parameters.
     if variables is None:
-        variables = model.init(subkey, np.ones((1, *input_size, 1)), train=False)
+        variables = model.init(subkey, np.ones((1, *input_size, channels)), train=False)
 
     # Create a TrainState object.
     state = TrainState.create(
@@ -476,10 +479,17 @@ def train_model(
     # Load datasets.
     print('Loading datasets...')
     dataset = load_datasets(dataset_path, adjustment, load_train=True, load_valid=True, load_test=False)
+    for k, v in dataset.items():
+        for i in range(len(v['images'])):
+            if v['images'][i].ndim == 2:
+                v['images'][i] = v['images'][i][:, :, None]
+            else:
+                v['images'][i] = np.moveaxis(v['images'][i], 0, -1)
     if len(dataset['valid']['images']):
         dataset['valid'] = transform_subdataset(dataset['valid'], input_size)
     coords_max_length = max([len(coords) for coords in dataset['train']['coords']] +
                             [len(coords) for coords in dataset['valid']['coords']])
+    channels = max(image.shape[-1] for image in dataset['train']['images'])
 
     # Round the input size.
     input_size = round_input_size(input_size)
@@ -531,7 +541,7 @@ def train_model(
 
     # Create the training state.
     print('Creating TrainState...')
-    state = create_train_state(key, input_size, dropout_rate, tx, variables)
+    state = create_train_state(key, input_size, dropout_rate, channels, tx, variables)
 
     # Create lists for storing batch and epoch metrics.
     batch_metrics_log = []
@@ -585,7 +595,8 @@ def train_model(
         },
         'adjustment': adjustment,
         'input_size': input_size,
-        'dilation_iterations': dilation_iterations
+        'dilation_iterations': dilation_iterations,
+        'channels': channels
     }
     bytes_model = serialization.to_bytes(model_dict)
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
