@@ -534,6 +534,14 @@ def train_model(
             print(f'Initializing model weights from {initial_model_path}...')
             with open(initial_model_path, 'rb') as f_model:
                 variables = serialization.from_bytes(target=None, encoded_bytes=f_model.read())['variables']
+                params = variables['params']
+                module_name = list(params.keys())[0]
+                submodule_name = [name for name in list(params[module_name].keys())
+                                  if not (name.startswith('Conv') or name.startswith('Decoder'))][0]
+                first_layer = params[module_name][submodule_name]['stem_conv']
+                first_layer['kernel'] = np.pad(
+                    first_layer['kernel'][:, :, :1], ((0, 0), (0, 0), (0, channels - 1), (0, 0))
+                )
         else:
             variables = None
     else:
