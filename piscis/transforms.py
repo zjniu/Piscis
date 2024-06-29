@@ -87,6 +87,9 @@ class RandomAugment:
         self.affines = []
         self.intensity_scales = []
 
+        # Determine the number of channels.
+        channels = images[0].shape[-1]
+
         for image, base_scale in zip(images, base_scales):
 
             # Random flips.
@@ -121,8 +124,10 @@ class RandomAugment:
 
             # Random intensity scaling.
             key, subkey = random.split(key)
-            intensity_scale = jnp.exp((random.uniform(subkey) - 0.5) * 2 * jnp.log(max_intensity_scale_factor))
-            self.intensity_scales.append(float(intensity_scale))
+            intensity_scale = np.exp(
+                (random.uniform(subkey, shape=(1, 1, channels)) - 0.5) * 2 * np.log(max_intensity_scale_factor)
+            )
+            self.intensity_scales.append(intensity_scale)
 
     def apply_coord_transforms(
             self,
@@ -207,6 +212,10 @@ class RandomAugment:
                 image = cv.warpAffine(image, M=affine, dsize=self.output_size, flags=cv.INTER_LINEAR)
             else:
                 raise ValueError("Interpolation mode is not supported.")
+
+            # Add channel axis if necessary.
+            if image.ndim == 2:
+                image = image[:, :, None]
 
             # Random flip
             if flip0:

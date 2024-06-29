@@ -216,7 +216,7 @@ def transform_subdataset(
 
     # Created the transformed subdataset dictionary.
     transformed_subds = {
-        'images': np.array(images)[:, :, :, None],
+        'images': np.array(images),
         'coords': coords,
     }
 

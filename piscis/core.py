@@ -83,6 +83,7 @@ class Piscis:
                 input_size = round_input_size(input_size)
             self.input_size = input_size
             self.dilation_iterations = model_dict['dilation_iterations']
+            self.channels = model_dict.get('channels', 1)
 
         # Define the model apply function.
         kernel_size = (2 * self.dilation_iterations + 1, ) * 2
@@ -356,24 +357,33 @@ class Piscis:
         ------
         ValueError
             If `x` does not have the correct dimensions.
+        ValueError
+            If `x` does not have the correct number of channels.
         """
+
+        # Get the number of input dimensions.
+        ndim = x.ndim
+
+        # Check the number of dimensions.
+        if ((ndim == 5) and stack) or ((ndim == 4) and (not stack)):
+            batch_axis = True
+        elif ((ndim == 3) and (not stack)) or ((ndim == 4) and stack):
+            batch_axis = False
+        else:
+            raise ValueError("The input does not have the correct dimensions.")
+
+        # Check the channel axis.
+        if self.channels == 1:
+            x = np.expand_dims(x, axis=-3)
+        else:
+            if x.shape[-3] != self.channels:
+                raise ValueError("The input does not have the correct number of channels.")
 
         # Convert the input to a Dask array if necessary.
         if isinstance(x, xr.DataArray):
             x = x.data
         if not isinstance(x, da.Array):
             x = da.from_array(x)
-
-        # Get the number of input dimensions.
-        ndim = x.ndim
-
-        # Check the number of dimensions.
-        if ((ndim == 4) and stack) or ((ndim == 3) and (not stack)):
-            batch_axis = True
-        elif ((ndim == 2) and (not stack)) or ((ndim == 3) and stack):
-            batch_axis = False
-        else:
-            raise ValueError("The input does not have the correct dimensions.")
 
         # Standardize the input if necessary.
         if self.adjustment == 'normalize':
@@ -418,7 +428,7 @@ class Piscis:
         tiles = tiles.compute()
 
         # Resize tiles if necessary.
-        if tiles.shape[1:3] != self.input_size:
+        if tiles.shape[-2:] != self.input_size:
             tiles = resize(tiles, (tiles.shape[0], *self.input_size), preserve_range=True)
 
         # Run the jitted model apply function on tiles.
@@ -501,7 +511,7 @@ def apply(
         Predicted binary labels.
     """
 
-    x = jnp.expand_dims(x, axis=-1)
+    x = jnp.moveaxis(x, -3, -1)
     deltas, labels = SpotsModel().apply(variables, x, False)
     labels = labels[:, :, :, 0]
     pooled_labels = utils.vmap_sum_pool(deltas, labels, kernel_size)
