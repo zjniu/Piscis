@@ -414,18 +414,16 @@ def pad(images: Sequence[np.ndarray]) -> Sequence[np.ndarray]:
     """
 
     # Compute the padded image size.
-    padded_size = (max(image.shape[0] for image in images), max(image.shape[1] for image in images))
+    padded_size = [max([image.shape[i] for image in images]) for i in range(images[0].ndim)]
 
     # Pad images.
     padded_images = []
     for image in images:
-        pad_i = padded_size[0] - image.shape[0]
-        pad_j = padded_size[1] - image.shape[1]
-        pad_width = ((0, pad_i), (0, pad_j))
-        if (pad_i > 0) or (pad_j > 0):
-            padded_image = np.pad(image, pad_width)
-        else:
+        if image.shape == padded_size:
             padded_image = image
+        else:
+            pad_width = [(0, m - n) for m, n in zip(padded_size, image.shape)]
+            padded_image = np.pad(image, pad_width)
         padded_images.append(padded_image)
 
     return padded_images
