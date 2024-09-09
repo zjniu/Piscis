@@ -4,7 +4,7 @@ build-backend = 'setuptools.build_meta'
 
 [project]
 name = 'Piscis'
-version = '0.2.1'
+version = '0.2.2'
 description = "An automatic deep learning algorithm for spot detection in fluorescence microscopy images."
 readme = 'README.md'
 requires-python = '>=3.7, <4'
