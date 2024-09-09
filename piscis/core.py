@@ -147,7 +147,7 @@ class Piscis:
         if stack and batch_axis:
 
             batch_axis_len = x.shape[0]
-            stack_axis_len = x.shape[-3]
+            stack_axis_len = x.shape[-4]
             coords = np.empty(batch_axis_len, dtype=object)
             if intermediates:
                 y = []
@@ -167,7 +167,7 @@ class Piscis:
         else:
 
             if stack:
-                stack_axis_len = x.shape[-3]
+                stack_axis_len = x.shape[-4]
                 output = self._predict_stack(tiles, stack_axis_len, scales, threshold, min_distance, intermediates)
             else:
                 output = lift(self._predict_plane, vectorized=True, batch_axis=batch_axis, pad_final_batch=True,
