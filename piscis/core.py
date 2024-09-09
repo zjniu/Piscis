@@ -361,6 +361,13 @@ class Piscis:
             If `x` does not have the correct number of channels.
         """
 
+        # Check the channel axis.
+        if self.channels == 1:
+            x = np.expand_dims(x, axis=-3)
+        else:
+            if x.shape[-3] != self.channels:
+                raise ValueError("The input does not have the correct number of channels.")
+
         # Get the number of input dimensions.
         ndim = x.ndim
 
@@ -371,13 +378,6 @@ class Piscis:
             batch_axis = False
         else:
             raise ValueError("The input does not have the correct dimensions.")
-
-        # Check the channel axis.
-        if self.channels == 1:
-            x = np.expand_dims(x, axis=-3)
-        else:
-            if x.shape[-3] != self.channels:
-                raise ValueError("The input does not have the correct number of channels.")
 
         # Convert the input to a Dask array if necessary.
         if isinstance(x, xr.DataArray):
