@@ -429,7 +429,7 @@ class Piscis:
 
         # Resize tiles if necessary.
         if tiles.shape[-2:] != self.input_size:
-            tiles = resize(tiles, (tiles.shape[0], *self.input_size), preserve_range=True)
+            tiles = resize(tiles, (*tiles.shape[:-2], *self.input_size), preserve_range=True)
 
         # Run the jitted model apply function on tiles.
         if intermediates:
