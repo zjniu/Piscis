@@ -21,7 +21,7 @@ def main():
     predict_parser = subparsers.add_parser('predict', formatter_class=formatter_class,
                                            help="Predict spots using a trained SpotsModel.")
     predict_parser.add_argument('input_path', type=str,
-                                help="Path to image or stack of images.")
+                                help="Path to image or folder of images.")
     predict_parser.add_argument('output_path', type=str,
                                 help="Path to save predicted spots as CSV.")
     predict_parser.add_argument('--model-name', type=str, default='20230905',
