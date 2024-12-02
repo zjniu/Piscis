@@ -18,6 +18,8 @@ for those who prefer the terminal. For a user-friendly graphical user interface,
 [NimbusImage](https://github.com/Kitware/UPennContrast), a cloud platform for biological image analysis enabling
 researchers to interactively visualize their data while leveraging state-of-the-art machine learning algorithms.
 
+For more information, please refer to the comprehensive documentation available at https://piscis.netlify.app.
+
 
 ## Examples
 
