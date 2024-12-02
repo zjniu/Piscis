@@ -1,10 +1,10 @@
 project = 'Piscis'
-copyright = '2023, William Niu'
+copyright = '2023-2024, William Niu'
 author = 'William Niu'
-release = '0.0.1'
 
 extensions = [
     'sphinx.ext.intersphinx',
+    'sphinx_copybutton',
     'autoapi.extension',
     'numpydoc'
 ]
@@ -23,3 +23,8 @@ exclude_patterns = []
 
 html_theme = 'sphinx_book_theme'
 html_static_path = ['_static']
+html_css_files = [
+    'custom.css',
+]
+
+html_logo = "_static/logo.svg"

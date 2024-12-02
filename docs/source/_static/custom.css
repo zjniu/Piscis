@@ -1,0 +1,3 @@
+html[data-theme="dark"] img {
+    filter: none !important;
+}
