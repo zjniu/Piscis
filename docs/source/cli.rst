@@ -1,5 +1,5 @@
 Command-line Interface (CLI)
-============================
+----------------------------
 
 Piscis also offers a command-line interface (CLI) for inference and training directly from the terminal. The CLI supports two commands: ``predict`` and ``train``.
 

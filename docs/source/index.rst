@@ -49,8 +49,7 @@ License
 `LICENSE <https://raw.githubusercontent.com/zjniu/piscis/main/LICENSE>`_ file shall be included in all copies or substantial portions of the Software.
 
 .. toctree::
-   :maxdepth: 2
-   :caption: Contents:
+   :hidden:
 
    getting_started
    installation
