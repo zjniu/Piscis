@@ -122,7 +122,7 @@ def round_input_size(input_size: Tuple[int, int]) -> Tuple[int, int]:
     stride_scale = np.prod([block['strides'] for block in BLOCK_ARGS])
     pool_scale = 2 ** sum((0 if block['pool'] is None else 1 for block in BLOCK_ARGS if block['pool']))
     scale = stride_scale * pool_scale
-    rounded_input_size = scale * np.rint(np.array(input_size) / scale).astype(int)
+    rounded_input_size = scale * np.ceil(np.array(input_size) / scale).astype(int)
     rounded_input_size = (int(rounded_input_size[0]), int(rounded_input_size[1]))
 
     return rounded_input_size
