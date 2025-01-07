@@ -132,7 +132,19 @@ class Piscis:
         dt = deeptile.load(x, link_data=False, dask=True)
         tile_size = (round(self.input_size[0] / scale), round(self.input_size[1] / scale))
         scales = (np.array([self.input_size]) - 1) / (np.array(tile_size) - 1)
-        tiles = dt.get_tiles(tile_size=tile_size, overlap=(0.1, 0.1)).pad(mode='symmetric')
+        if x.shape[-2] > tile_size[0]:
+            overlap_i = 0.1
+        else:
+            overlap_i = 0
+        if x.shape[-1] > tile_size[1]:
+            overlap_j = 0.1
+        else:
+            overlap_j = 0
+        if (2 * x.shape[-2] >= tile_size[0]) and (2 * x.shape[-1] >= tile_size[1]):
+            pad_mode = 'symmetric'
+        else:
+            pad_mode = 'constant'
+        tiles = dt.get_tiles(tile_size=tile_size, overlap=(overlap_i, overlap_j)).pad(mode=pad_mode)
 
         # Adjust tiles if necessary.
         if x_stats is not None:
