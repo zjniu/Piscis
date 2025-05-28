@@ -101,7 +101,7 @@ def compute_metrics(
     if len(distance_thresholds) > 1:
         for evaluation_metric in evaluation_metrics:
             integral_metrics[evaluation_metric] = (
-                    integrate.trapz([metrics[evaluation_metric] for metrics in metrics_list], distance_thresholds) /
+                    integrate.trapezoid([metrics[evaluation_metric] for metrics in metrics_list], distance_thresholds) /
                     np.ptp(distance_thresholds))
     else:
         integral_metrics = metrics_list[0]
