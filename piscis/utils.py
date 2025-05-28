@@ -239,7 +239,7 @@ def smooth_sum_pool(
         Displacement vectors.
     labels : jax.Array
         Binary labels.
-    sigma : jax.Array
+    sigma : float
         Standard deviation of the Gaussian distribution. Default is 0.5.
     kernel_size : Sequence[int], optional
         Kernel size or window size of the sum pooling operation. Default is (3, 3).
