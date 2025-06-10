@@ -88,7 +88,10 @@ class RandomAugment:
         self.intensity_scales = []
 
         # Determine the number of channels.
-        channels = images[0].shape[-1]
+        if images[0].ndim == 2:
+            channels = 1
+        elif images[0].ndim == 3:
+            channels = images[0].shape[-1]
 
         for image, base_scale in zip(images, base_scales):
 
