@@ -63,6 +63,284 @@ def compute_spot_coordinates(
     return coords
 
 
+def max_pool(
+        deltas: jax.Array,
+        labels: jax.Array,
+        kernel_size: Sequence[int] = (3, 3)
+) -> jax.Array:
+
+    """Max pool labels using deltas.
+
+    Parameters
+    ----------
+    deltas : jax.Array
+        Displacement vectors.
+    labels : jax.Array
+        Binary labels.
+    kernel_size : Sequence[int], optional
+        Kernel size or window size of the max pooling operation. Default is (3, 3).
+
+    Returns
+    -------
+    pooled_labels : jax.Array
+        Pooled labels.
+    """
+
+    # Generate an index map.
+    i, j = jnp.arange(deltas.shape[0]), jnp.arange(deltas.shape[1])
+    index_map = jnp.stack(jnp.meshgrid(i, j, indexing='ij'), axis=-1)
+
+    # Compute the pixel convergence array after applying deltas.
+    convergence = jnp.rint(deltas + index_map).astype(int)
+
+    # Pad convergence and labels arrays.
+    pad_width = (((kernel_size[0] - 1) // 2, ) * 2, ((kernel_size[1] - 1) // 2, ) * 2)
+    convergence = jnp.pad(convergence, (*pad_width, (0, 0)))
+    labels = jnp.pad(labels, pad_width)
+
+    # Max pool the label values of pixels that converge at each pixel location.
+    pooled_labels = vmap_max_convergent_labels(convergence, labels, kernel_size, i, j)
+
+    return pooled_labels
+
+
+vmap_max_pool = vmap(max_pool, in_axes=(0, 0, None))
+
+
+def _max_convergent_labels(
+        convergence: jax.Array,
+        labels: jax.Array,
+        kernel_size: Sequence[int],
+        i: jax.Array,
+        j: jax.Array
+) -> jax.Array:
+
+    """Max pool the label values of pixels that converge at a given pixel location.
+
+    Parameters
+    ----------
+    convergence : jax.Array
+        Convergence array.
+    labels : jax.Array
+        Binary labels.
+    kernel_size : Sequence[int]
+        Kernel size or window size to search for labels convergence.
+    i : jax.Array
+        Pixel row index.
+    j : jax.Array
+        Pixel column index.
+
+    Returns
+    -------
+    pooled_label : jax.Array
+        Pooled label.
+    """
+
+    # Extract the convergence and labels arrays in the kernel.
+    convergence = dynamic_slice(convergence, (i, j, 0), (*kernel_size, 2))
+    labels = dynamic_slice(labels, (i, j), kernel_size)
+
+    # Find pixel sources that converge at the given pixel location.
+    sources = jnp.all(convergence == jnp.array((i, j)), axis=-1)
+
+    # Max pool the label values at pixel sources.
+    pooled_label = jnp.max(sources * labels)
+
+    return pooled_label
+
+
+vmap_max_convergent_labels = vmap(
+    vmap(_max_convergent_labels, in_axes=(None, None, None, None, 0)),
+    in_axes=(None, None, None, 0, None)
+)
+
+
+def softmax_pool(
+        x: jax.Array,
+        deltas: jax.Array,
+        labels: jax.Array,
+        kernel_size: Sequence[int] = (3, 3),
+        temperature: float = 0.05
+) -> jax.Array:
+
+    """Softmax pool labels using deltas.
+
+    Parameters
+    ----------
+    deltas : jax.Array
+        Displacement vectors.
+    labels : jax.Array
+        Binary labels.
+    kernel_size : Sequence[int], optional
+        Kernel size or window size of the max pooling operation. Default is (3, 3).
+    temperature : float
+        Temperature parameter. Default is 0.05.
+
+    Returns
+    -------
+    pooled_labels : jax.Array
+        Pooled labels.
+    """
+
+    # Generate an index map.
+    i, j = jnp.arange(deltas.shape[0]), jnp.arange(deltas.shape[1])
+    index_map = jnp.stack(jnp.meshgrid(i, j, indexing='ij'), axis=-1)
+
+    # Compute the pixel convergence array after applying deltas.
+    convergence = jnp.rint(deltas + index_map).astype(int)
+
+    # Pad convergence and labels arrays.
+    pad_width = (((kernel_size[0] - 1) // 2, ) * 2, ((kernel_size[1] - 1) // 2, ) * 2)
+    convergence = jnp.pad(convergence, (*pad_width, (0, 0)))
+    x = jnp.pad(x, pad_width)
+    labels = jnp.pad(labels, pad_width)
+
+    # Softmax pool the label values of pixels that converge at each pixel location.
+    pooled_labels = vmap_softmax_pool_kernel(convergence, x, labels, kernel_size, temperature, i, j)
+
+    return pooled_labels
+
+
+def _softmax_pool_kernel(
+        convergence: jax.Array,
+        x: jax.Array,
+        labels: jax.Array,
+        kernel_size: Sequence[int],
+        temperature: float,
+        i: jax.Array,
+        j: jax.Array
+) -> jax.Array:
+
+    """Softmax pool the label values of pixels that converge at a given pixel location.
+
+    Parameters
+    ----------
+    convergence : jax.Array
+        Convergence array.
+    labels : jax.Array
+        Binary labels.
+    kernel_size : Sequence[int]
+        Kernel size or window size to search for labels convergence.
+    temperature : float
+        Temperature parameter.
+    i : jax.Array
+        Pixel row index.
+    j : jax.Array
+        Pixel column index.
+
+    Returns
+    -------
+    pooled_label : jax.Array
+        Pooled label.
+    """
+
+    # Extract the convergence and labels arrays in the kernel.
+    convergence = dynamic_slice(convergence, (i, j, 0), (*kernel_size, 2))
+    x = dynamic_slice(x, (i, j), kernel_size)
+    labels = dynamic_slice(labels, (i, j), kernel_size)
+
+    # Find pixel sources that converge at the given pixel location.
+    sources = jnp.all(convergence == jnp.array((i, j)), axis=-1)
+
+    # Softmax pool the label values at pixel sources.
+    labels = sources * labels
+    weights = jax.nn.softmax(labels.ravel() / temperature).reshape(kernel_size)
+    pooled_label = jnp.sum(weights * x)
+
+    return pooled_label
+
+
+vmap_softmax_pool_kernel = vmap(
+    vmap(_softmax_pool_kernel, in_axes=(None, None, None, None, None, None, 0)),
+    in_axes=(None, None, None, None, None, 0, None)
+)
+
+
+def smooth_peak_local_max(
+        labels: jax.Array,
+        temperature: float,
+        kernel_size: Sequence[int] = (3, 3)
+) -> jax.Array:
+    
+    """Smooth variant of peak_local_max.
+
+    Parameters
+    ----------
+    labels : jax.Array
+        Binary labels.
+    temperature : float
+        Temperature parameter.
+    kernel_size : Sequence[int], optional
+        Kernel size or window size of the peak_local_max operation. Default is (3, 3).
+    """
+    
+    # Generate indices.
+    i, j = jnp.arange(labels.shape[0]), jnp.arange(labels.shape[1])
+
+    # Pad labels array.
+    r = ((kernel_size[0] - 1) // 2, (kernel_size[1] - 1) // 2)
+    pad_width = ((r[0], ) * 2, (r[1], ) * 2)
+    labels = jnp.pad(labels, pad_width)
+
+    # Sum pool the label values of pixels that converge at each pixel location.
+    peak_labels = vmap_smooth_local_max(labels, temperature, kernel_size, r, i, j)
+
+    return peak_labels
+
+
+vmap_smooth_peak_local_max = vmap(smooth_peak_local_max, in_axes=(0, None))
+
+
+def _smooth_local_max(
+        labels: jax.Array,
+        temperature: float,
+        kernel_size: Sequence[int],
+        r: Sequence[int],
+        i: jax.Array,
+        j: jax.Array
+) -> jax.Array:
+
+    """Smooth local max at a given pixel location.
+
+    Parameters
+    ----------
+    labels : jax.Array
+        Binary labels.
+    temperature : float
+        Temperature parameter.
+    kernel_size : Sequence[int]
+        Kernel size or window size to search for local max.
+    r : Sequence[int]
+        Radii of the kernel.
+    i : jax.Array
+        Pixel row index.
+    j : jax.Array
+        Pixel column index.
+
+    Returns
+    -------
+    label : jax.Array
+        Smooth local maxed label.
+    """
+
+    # Extract the labels arrays in the kernel.
+    labels = dynamic_slice(labels, (i, j), kernel_size)
+
+    # Compute softmax weights.
+    weights = jax.nn.softmax(labels.ravel() / temperature).reshape(kernel_size)
+
+    # Compute weighted sum.
+    label = weights[r] * labels[r]
+
+    return label
+
+
+vmap_smooth_local_max = vmap(
+    vmap(_smooth_local_max, in_axes=(None, None, None, None, None, 0)),
+    in_axes=(None, None, None, None, 0, None)
+)
+
+
 def scanned_sum_pool(
         deltas: jax.Array,
         labels: jax.Array,
