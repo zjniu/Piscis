@@ -406,6 +406,7 @@ def voronoi_transform(
     batch_size = len(coords)
     deltas = np.zeros((batch_size, *output_size, 2), dtype=float)
     labels = np.zeros((batch_size, *output_size), dtype=bool)
+    dilated_labels = np.zeros((batch_size, *output_size), dtype=bool)
 
     # Determine the padded length of the coordinates sequence.
     coords_max_length = np.max([len(coord) for coord in coords])
@@ -440,12 +441,15 @@ def voronoi_transform(
 
         # Dilate the labels array if necessary.
         if dilation_iterations > 0:
-            labels[k] = ndimage.binary_dilation(labels[k], structure=structure, iterations=dilation_iterations)
+            dilated_labels[k] = ndimage.binary_dilation(labels[k], structure=structure, iterations=dilation_iterations)
+        else:
+            dilated_labels[k] = labels[k]
 
     # Expand the shape of the labels array.
     labels = np.expand_dims(labels, axis=-1)
+    dilated_labels = np.expand_dims(dilated_labels, axis=-1)
 
-    return deltas, labels
+    return deltas, labels, dilated_labels
 
 
 @jit

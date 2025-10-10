@@ -246,13 +246,14 @@ def transform_batch(
     output_shape = images.shape[1:3]
 
     # Apply the Voronoi transform.
-    deltas, labels = voronoi_transform(coords, output_shape, dilation_iterations, coords_pad_length)
+    deltas, labels, dilated_labels = voronoi_transform(coords, output_shape, dilation_iterations, coords_pad_length)
 
     # Create the transformed batch dictionary.
     transformed_batch = {
         'images': images,
         'deltas': deltas,
-        'labels': labels
+        'labels': labels,
+        'dilated_labels': dilated_labels
     }
 
     return transformed_batch
