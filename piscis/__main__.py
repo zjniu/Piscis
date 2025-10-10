@@ -77,7 +77,11 @@ def main():
                                    "misclassifications due to minor offsets.")
     train_parser.add_argument('--max-distance', type=float, default=3.0,
                               help="Maximum distance for matching predicted and ground truth displacement vectors.")
-    train_parser.add_argument('--l2-loss-weight', type=float, default=0.25,
+    train_parser.add_argument('--temperature', type=float, default=0.05,
+                              help="Temperature parameter.")
+    train_parser.add_argument('--epsilon', type=float, default=1e-7,
+                              help="Small constant for numerical stability.")
+    train_parser.add_argument('--l2-loss-weight', type=float, default=0.1,
                               help="Weight for the L2 loss term.")
     train_parser.add_argument('--bce-loss-weight', type=float, default=0.0,
                               help="Weight for the bce loss term.")
@@ -126,6 +130,8 @@ def main():
             decay_factor=args.decay_factor,
             dilation_iterations=args.dilation_iterations,
             max_distance=args.max_distance,
+            temperature=args.temperature,
+            epsilon=args.epsilon,
             loss_weights=loss_weights,
             save_checkpoints=args.save_checkpoints
         )
