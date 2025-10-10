@@ -72,7 +72,7 @@ class Piscis:
         model_path = MODELS_DIR / model_name
         if not model_path.is_file():
             download_pretrained_model(model_name)
-        with open(MODELS_DIR / model_name, 'rb') as f_model:
+        with open(model_path, 'rb') as f_model:
             model_dict = serialization.from_bytes(target=None, encoded_bytes=f_model.read())
             self.variables = model_dict['variables']
             self.adjustment = model_dict['adjustment']
