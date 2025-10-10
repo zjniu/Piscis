@@ -500,7 +500,7 @@ def train_model(
         Small constant for numerical stability. Default is 1e-7.
     loss_weights : Optional[Dict[str, float]], optional
         Weights for terms in the overall loss function. Supported terms are 'l2', 'bce', 'focal', 'dice', and
-        'smoothf1'. If None, the loss weights {'l2': 0.25, 'smoothf1': 1.0} will be used. Default is None.
+        'smoothf1'. If None, the loss weights {'l2': 0.1, 'smoothf1': 1.0} will be used. Default is None.
     save_checkpoints : bool, optional
         Whether to save checkpoints during training. Default is True.
 
@@ -549,7 +549,7 @@ def train_model(
 
     # Default loss weights.
     if loss_weights is None:
-        loss_weights = {'l2': 0.25, 'smoothf1': 1.0}
+        loss_weights = {'l2': 0.1, 'smoothf1': 1.0}
 
     # Define directories for storing checkpoints and the model.
     checkpoint_path = CHECKPOINTS_DIR / model_name
