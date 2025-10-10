@@ -5,10 +5,87 @@ from functools import wraps
 from jax import vmap
 from typing import Callable, Optional, Union
 
-from piscis.utils import smooth_sum_pool
+from piscis.utils import max_pool, smooth_peak_local_max, smooth_sum_pool, softmax_pool, sum_pool
 
 
 def smoothf1_loss(
+        deltas_pred: jax.Array,
+        labels_pred: jax.Array,
+        deltas: jax.Array,
+        labels: jax.Array,
+        dilated_labels: jax.Array,
+        dilation_iterations: int,
+        max_distance: float,
+        temperature: float = 0.05,
+        epsilon: float = 1e-7
+) -> jax.Array:
+
+    """Compute the SmoothF1 loss.
+
+    Parameters
+    ----------
+    deltas_pred : jax.Array
+        Predicted displacement vectors.
+    labels_pred : jax.Array
+        Predicted binary labels.
+    deltas : jax.Array
+        Ground truth displacement vectors.
+    labels : jax.Array
+        Ground truth binary labels.
+    dilated_labels : jax.Array
+        Ground truth dilated binary labels.
+    dilation_iterations : int
+        Number of iterations used to dilate ground truth labels.
+    max_distance : float
+        Maximum distance for matching predicted and ground truth displacement vectors.
+    temperature : float, optional
+        Temperature parameter. Default is 0.05.
+    epsilon : float, optional
+        Small constant for numerical stability. Default is 1e-7.
+
+    Returns
+    -------
+    smoothf1 : jax.Array
+        SmoothF1 loss.
+    """
+
+    # Squeeze the channel dimension in labels arrays.
+    labels_pred = labels_pred[:, :, 0]
+    dilated_labels = dilated_labels[:, :, 0]
+    labels = labels[:, :, 0]
+
+    kernel_size = (2 * dilation_iterations + 1, ) * 2
+    pooled_labels = max_pool(deltas_pred, labels_pred, kernel_size)
+    peak_labels = smooth_peak_local_max(pooled_labels, temperature, (3, 3))
+    distances = jnp.linalg.norm(deltas_pred - deltas, axis=-1)
+    matches = jnp.maximum(1 - distances / max_distance, 0.0)
+    assignments = sum_pool(
+        deltas,
+        peak_labels,
+        kernel_size
+    )
+    assignments = jnp.minimum(assignments, 1.0)
+    matches = softmax_pool(
+        matches,
+        deltas,
+        peak_labels,
+        kernel_size,
+        temperature
+    )
+
+    # Estimate the number of true positives, false positives, and false negatives.
+    tp = jnp.sum(assignments * matches)
+    fp = jnp.sum(peak_labels) - tp
+    fn = jnp.sum(labels) - tp
+    tp = tp + epsilon
+
+    # Compute the SmoothF1 loss.
+    smoothf1 = -2 * tp / (2 * tp + fp + fn)
+
+    return smoothf1
+
+
+def old_smoothf1_loss(
         deltas_pred: jax.Array,
         labels_pred: jax.Array,
         deltas: jax.Array,
@@ -18,7 +95,7 @@ def smoothf1_loss(
         epsilon: float = 1e-7
 ) -> jax.Array:
 
-    """Compute the SmoothF1 loss.
+    """Compute the (old) SmoothF1 loss.
 
     Parameters
     ----------
@@ -99,7 +176,8 @@ def dice_loss(
 def masked_l2_loss(
         y_pred: jax.Array,
         y: jax.Array,
-        mask: jax.Array
+        mask: jax.Array,
+        epsilon: float = 1e-7
 ) -> jax.Array:
 
     """Compute the L2 loss over masked pixels.
@@ -112,6 +190,8 @@ def masked_l2_loss(
         Ground truth values.
     mask : jax.Array
         Binary mask where 1 indicates pixels to compute the L2 loss and 0 indicates pixels to ignore.
+    epsilon : float, optional
+        Small constant for numerical stability. Default is 1e-7.
 
     Returns
     -------
@@ -119,7 +199,7 @@ def masked_l2_loss(
         Masked root-mean-square error.
     """
 
-    l2 = jnp.sum(jnp.linalg.norm(y_pred - y, axis=-1) * mask) / jnp.sum(mask)
+    l2 = jnp.sum(jnp.linalg.norm(y_pred - y, axis=-1) * mask) / (jnp.sum(mask) + epsilon)
 
     return l2
 
@@ -806,9 +886,15 @@ def reduce_loss(
     """
 
     if reduction == 'mean':
-        loss = jnp.mean(loss)
+        if isinstance(loss, tuple):
+            loss = [jnp.mean(l) for l in loss]
+        else:
+            loss = jnp.mean(loss)
     elif reduction == 'sum':
-        loss = jnp.sum(loss)
+        if isinstance(loss, tuple):
+            loss = [jnp.sum(l) for l in loss]
+        else:
+            loss = jnp.sum(loss)
     else:
         raise ValueError("Reduction method is not supported.")
 
