@@ -28,6 +28,8 @@ class RandomAugment:
         List of booleans for flipping along axis 0.
     flips1 : List[bool]
         List of booleans for flipping along axis 1.
+    intensity_shifts : List[float]
+        List of image intensity shift values.
     intensity_scales : List[float]
         List of image intensity scale factors.
     """
@@ -43,6 +45,7 @@ class RandomAugment:
         self.affines = []
         self.flips0 = []
         self.flips1 = []
+        self.intensity_shifts = []
         self.intensity_scales = []
 
     def generate_transforms(
@@ -53,6 +56,7 @@ class RandomAugment:
             output_size: Tuple[int, int],
             min_scale_factor: float = 0.75,
             max_scale_factor: float = 1.25,
+            max_intensity_shift: float = 0.1,
             max_intensity_scale_factor: float = 5
     ) -> None:
 
@@ -72,6 +76,9 @@ class RandomAugment:
             Minimum scale factor. Default is 0.75.
         max_scale_factor : float, optional
             Maximum scale factor. Default is 1.25.
+        max_intensity_shift : float, optional
+            Maximum intensity shift. Intensity shifts are sampled from a uniform distribution with support on the interval
+            [-`max_intensity_shift`, `max_intensity_shift`]. Default is 0.1.
         max_intensity_scale_factor : float, optional
             Maximum intensity scale factor. Intensity scale factors are sampled from a log-uniform distribution with
             support on the interval [1 / `max_intensity_scale_factor`, `max_intensity_scale_factor`]. Default is 5.
@@ -102,22 +109,31 @@ class RandomAugment:
             flip1 = random.uniform(subkeys[1]) > 0.5
             self.flips1.append(float(flip1))
 
-            # Random scaling.
             key, subkey = random.split(key)
-            scale = base_scale * (min_scale_factor + (max_scale_factor - min_scale_factor) * random.uniform(subkey))
-            self.scales.append(float(scale))
+            if random.uniform(subkey) > 0.5:
 
-            # Random translation.
-            key, subkey = random.split(key)
-            dxy = np.maximum(0, np.array([image.shape[1] * scale - output_size[1],
-                                          image.shape[0] * scale - output_size[0]]))
-            dxy = (random.uniform(subkey, (2, )) - 0.5) * dxy
-            self.dxys.append(np.asarray(dxy))
+                # Random scaling.
+                key, subkey = random.split(key)
+                scale = base_scale * (min_scale_factor + (max_scale_factor - min_scale_factor) * random.uniform(subkey))
+                self.scales.append(float(scale))
 
-            # Random rotation.
-            key, subkey = random.split(key)
-            theta = random.uniform(subkey) * 2 * np.pi
-            self.thetas.append(float(theta))
+                # Random translation.
+                key, subkey = random.split(key)
+                dxy = np.maximum(0, np.array([image.shape[1] * scale - output_size[1],
+                                            image.shape[0] * scale - output_size[0]]))
+                dxy = (random.uniform(subkey, (2, )) - 0.5) * dxy
+                self.dxys.append(np.asarray(dxy))
+
+                # Random rotation.
+                key, subkey = random.split(key)
+                theta = random.uniform(subkey) * 2 * np.pi
+                self.thetas.append(float(theta))
+
+            else:
+
+                scale = 1
+                dxy = np.array([0, 0])
+                theta = 0
 
             # Construct affine transformation.
             image_center = (image.shape[1] / 2, image.shape[0] / 2)
@@ -125,11 +141,18 @@ class RandomAugment:
             affine[:, 2] += np.array(output_size) / 2 - np.array(image_center) + dxy
             self.affines.append(affine)
 
-            # Random intensity scaling.
+            # Random intensity shift and scaling.
             key, subkey = random.split(key)
-            intensity_scale = np.exp(
-                (random.uniform(subkey, shape=(1, 1, channels)) - 0.5) * 2 * np.log(max_intensity_scale_factor)
-            )
+            if random.uniform(subkey) > 0.5:
+                key, *subkeys = random.split(key, 3)
+                intensity_shift = (random.uniform(subkeys[0], shape=(1, 1, channels)) - 0.5) * 2 * max_intensity_shift 
+                intensity_scale = np.exp(
+                    (random.uniform(subkeys[1], shape=(1, 1, channels)) - 0.5) * 2 * np.log(max_intensity_scale_factor)
+                )
+            else:
+                intensity_shift = 0.0
+                intensity_scale = 1.0
+            self.intensity_shifts.append(intensity_shift)
             self.intensity_scales.append(intensity_scale)
 
     def apply_coord_transforms(
@@ -205,8 +228,8 @@ class RandomAugment:
 
         transformed_images = []
 
-        for image, affine, flip0, flip1, intensity_scale in \
-                zip(images, self.affines, self.flips0, self.flips1, self.intensity_scales):
+        for image, affine, flip0, flip1, intensity_shift, intensity_scale in \
+                zip(images, self.affines, self.flips0, self.flips1, self.intensity_shifts, self.intensity_scales):
 
             # Apply affine transformation
             if interpolation == 'nearest':
@@ -227,7 +250,7 @@ class RandomAugment:
                 image = np.flip(image, axis=1)
 
             # Random intensity scaling
-            image = image * intensity_scale
+            image = intensity_shift + intensity_scale * image
 
             transformed_images.append(image)
 
