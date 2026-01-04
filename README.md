@@ -60,7 +60,7 @@ If you use `piscis` in your research, please cite our
 estimator of the F1 score enables accurate spot detection in fluorescence microscopy images via deep learning.
 > _Cell Systems_. https://doi.org/10.1016/j.cels.2025.101448
 ```
-@article{Niu2024-Piscis,
+@article{Niu2025-Piscis,
     title={Piscis: A loss estimator of the F1 score enables accurate spot detection in fluorescence microscopy images via deep learning},
     author={Niu, Zijian and O’Farrell, Aoife and Li, Jingxin and Reffsin, Sam and Jain, Naveen and Dardani, Ian and Goyal, Yogesh and Raj, Arjun},
     year=2025,
