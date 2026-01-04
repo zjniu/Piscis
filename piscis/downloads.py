@@ -27,9 +27,9 @@ def download_pretrained_model(
 
     # Download the model if available.
     fs = HfFileSystem()
-    hf_model_path = f'{HF_MODELS_DIR}{model_name}'
+    hf_model_path = f'{HF_MODELS_DIR}{f'{model_name}.pt'}'
     if fs.exists(hf_model_path):
-        fs.download(hf_model_path, str(MODELS_DIR / model_name))
+        fs.download(hf_model_path, str(MODELS_DIR / f'{model_name}.pt'), progress=False)
     else:
         raise ValueError(f"Model {model_name} is not found.")
 
@@ -45,7 +45,8 @@ def list_pretrained_models() -> Sequence[str]:
     """
 
     fs = HfFileSystem()
-    pretrained_models = [path.removeprefix(HF_MODELS_DIR) for path in fs.ls(HF_MODELS_DIR, detail=False)]
+    pretrained_models = set(path.removeprefix(HF_MODELS_DIR).split('.')[0]
+                            for path in fs.ls(HF_MODELS_DIR, detail=False))
 
     return pretrained_models
 
@@ -64,8 +65,6 @@ def download_dataset(
         Dataset name.
     path : str
         Path to save the dataset.
-    minimal_download : bool, optional
-        Whether to download only the necessary files for training and inference. Default is True.
 
     Raises
     ------
@@ -76,15 +75,7 @@ def download_dataset(
     fs = HfFileSystem()
     hf_dataset_path = f'{HF_DATASETS_DIR}{dataset_name}'
     if fs.exists(hf_dataset_path) and ('/' not in dataset_name):
-        path = str(path)
-        if minimal_download:
-            dataset_path = Path(path) / dataset_name
-            dataset_path.mkdir(parents=True, exist_ok=True)
-            dataset_path = str(dataset_path)
-            for file_path in fs.glob(f'{hf_dataset_path}/*.npz'):
-                fs.download(file_path, dataset_path)
-        else:
-            fs.download(hf_dataset_path, path, recursive=True)
+        fs.download(hf_dataset_path, str(path), recursive=True, progress=False)
     else:
         raise ValueError(f"Dataset {dataset_name} is not found.")
 

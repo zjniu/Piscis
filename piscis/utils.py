@@ -1,9 +1,8 @@
-import jax
-import jax.numpy as jnp
 import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
-from jax import vmap
-from jax.lax import dynamic_slice, scan
 from numba import njit
 from scipy import optimize
 from skimage import feature, measure
@@ -11,20 +10,20 @@ from typing import Dict, List, Sequence, Tuple
 
 
 def compute_spot_coordinates(
+        labels: np.ndarray,
         deltas: np.ndarray,
-        pooled_labels: np.ndarray,
         threshold: float,
         min_distance: int,
 ) -> np.ndarray:
 
-    """Compute spot coordinates from deltas and labels.
+    """Compute spot coordinates from labels and deltas.
 
     Parameters
     ----------
+    labels : np.ndarray
+        Labels.
     deltas : np.ndarray
         Displacement vectors.
-    pooled_labels : np.ndarray
-        Pooled labels.
     threshold : float
         Detection threshold between 0 and 1.
     min_distance : int
@@ -36,345 +35,235 @@ def compute_spot_coordinates(
         Coordinates of detected spots.
     """
 
-    # Check if the pooled labels are in a stack.
-    stack = pooled_labels.ndim == 3
-
+    # Check if the labels are in a stack.
+    stack = labels.ndim == 3
     if stack:
 
-        # Use connected components to detect spots if pooled labels are in a stack.
-        labels = measure.label(pooled_labels > threshold)
+        # Use connected components to detect spots if labels are in a stack.
+        labels = measure.label(labels > threshold)
         peaks = np.array([region['centroid'] for region in measure.regionprops(labels)], dtype=int)
 
     else:
 
-        # Use peak local maxima to detect spots if pooled labels are not in a stack.
-        peaks = feature.peak_local_max(pooled_labels,
+        # Use peak local maxima to detect spots if labels are not in a stack.
+        peaks = feature.peak_local_max(labels,
                                        min_distance=min_distance, threshold_abs=threshold, exclude_border=False)
 
     # Apply deltas to detected spots.
     if len(peaks) > 0:
         if stack:
-            coords = peaks + np.pad(deltas[peaks[:, 0], peaks[:, 1], peaks[:, 2]], ((0, 0), (1, 0)))
+            coords = peaks + np.pad(deltas[peaks[:, 0], :, peaks[:, 1], peaks[:, 2]], ((0, 0), (1, 0)))
         else:
-            coords = peaks + deltas[peaks[:, 0], peaks[:, 1]]
+            coords = peaks + deltas[:, peaks[:, 0], peaks[:, 1]].T
     else:
-        coords = np.empty((0, pooled_labels.ndim), dtype=np.float32)
+        coords = np.empty((0, labels.ndim), dtype=np.float32)
 
     return coords
 
 
-def scanned_sum_pool(
-        deltas: jax.Array,
-        labels: jax.Array,
-        n_iter: int,
+def deformable_max_pool(
+        labels: torch.Tensor,
+        deltas: torch.Tensor,
         kernel_size: Sequence[int] = (3, 3)
-) -> jax.Array:
+) -> torch.Tensor:
 
-    """Scanned version of `sum_pool`.
+    """Max pool labels using deltas.
 
     Parameters
     ----------
-    deltas : jax.Array
+    labels : torch.Tensor
+        Labels.
+    deltas : torch.Tensor
         Displacement vectors.
-    labels : jax.Array
-        Binary labels.
-    n_iter : int
-        Number of iterations.
     kernel_size : Sequence[int], optional
-        Kernel size or window size of the sum pooling operation. Default is (3, 3).
+        Kernel size or window size of the max pooling operation. Default is (3, 3).
 
     Returns
     -------
-    pooled_labels : jax.Array
-        Pooled labels after sum pooling for `n_iter` iterations.
+    pooled_labels : torch.Tensor
+        Pooled labels.
     """
 
-    pooled_labels = scan(lambda c, x: _scanned_sum_pool(deltas, c, kernel_size), labels, jnp.empty(n_iter))[0]
+    h, w = labels.shape
+    kh, kw = kernel_size
+    device = labels.device
+    padding = (kh // 2, kw // 2)
+    patch_size = kh * kw
+
+    # Generate an index map.
+    i = torch.arange(h, device=device)
+    j = torch.arange(w, device=device)
+    ii, jj = torch.meshgrid(i, j, indexing='ij')
+    index_map = torch.stack((ii, jj))
+
+    # Compute the pixel convergence array after applying deltas.
+    convergence = torch.round(deltas + index_map)
+
+    # Max pool the label values of pixels that converge at each pixel location.
+    unfold = nn.Unfold(kernel_size=kernel_size, padding=padding)
+    convergence = unfold(convergence[None]).view(2, patch_size, h, w).int()
+    labels = unfold(labels[None, None]).view(patch_size, h, w)
+    matches = (convergence == index_map[:, None]).all(dim=0)
+    pooled_labels = (labels * matches).max(dim=0).values
 
     return pooled_labels
 
 
-vmap_scanned_sum_pool = vmap(scanned_sum_pool, in_axes=(0, 0, None, None))
+vmap_deformable_max_pool = torch.vmap(deformable_max_pool, in_dims=(0, 0, None))
 
 
-def _scanned_sum_pool(
-        deltas: jax.Array,
-        pooled_labels: jax.Array,
-        kernel_size: Sequence[int]
-) -> Tuple[jax.Array, None]:
+def deformable_softmax_pool(
+        labels: torch.Tensor,
+        deltas: torch.Tensor,
+        x: torch.Tensor = None,
+        kernel_size: Sequence[int] = (3, 3),
+        temperature: float = 0.05
+) -> torch.Tensor:
 
-    """Single iteration of `scanned_apply_deltas`.
+    """Softmax pool labels or another tensor using deltas.
 
     Parameters
     ----------
-    deltas : jax.Array
+    labels : torch.Tensor
+        Labels.
+    deltas : torch.Tensor
         Displacement vectors.
-    pooled_labels : jax.Array
-        Pooled labels carried over from the previous iteration.
-    kernel_size : Sequence[int]
-        Kernel size or window size of the sum pooling operation.
+    x : torch.Tensor, optional
+        Tensor to be pooled. Default is None.
+    kernel_size : Sequence[int], optional
+        Kernel size or window size of the softmax pooling operation. Default is (3, 3).
+    temperature : float
+        Temperature parameter for softmax. Default is 0.05.
 
     Returns
     -------
-    pooled_labels : jax.Array
-        Pooled labels to carry to the next iteration.
-    None
+    pooled_labels : torch.Tensor
+        Pooled labels.
     """
 
-    pooled_labels = sum_pool(deltas, pooled_labels, kernel_size)
+    h, w = labels.shape
+    kh, kw = kernel_size
+    device = labels.device
+    padding = (kh // 2, kw // 2)
+    patch_size = kh * kw
 
-    return pooled_labels, None
+    # Generate an index map.
+    i = torch.arange(h, device=device)
+    j = torch.arange(w, device=device)
+    ii, jj = torch.meshgrid(i, j, indexing='ij')
+    index_map = torch.stack((ii, jj))
+
+    # Compute the pixel convergence array after applying deltas.
+    convergence = torch.round(deltas + index_map)
+
+    # Softmax pool the label values of pixels that converge at each pixel location.
+    unfold = nn.Unfold(kernel_size=kernel_size, padding=padding)
+    convergence = unfold(convergence[None]).view(2, patch_size, h, w).int()
+    labels = unfold(labels[None, None]).view(patch_size, h, w)
+    if x is None:
+        x = labels
+    else:
+        x = unfold(x[None, None]).view(patch_size, h, w)
+    matches = (convergence == index_map[:, None]).all(dim=0)
+    labels = labels * matches
+    weights = F.softmax(labels / temperature, dim=0)
+    pooled_x = (x * weights).sum(dim=0)
+
+    return pooled_x
 
 
-def sum_pool(
-        deltas: jax.Array,
-        labels: jax.Array,
+vmap_deformable_softmax_pool = torch.vmap(deformable_softmax_pool, in_dims=(0, 0, 0, None, None))
+
+
+def deformable_sum_pool(
+        labels: torch.Tensor,
+        deltas: torch.Tensor,
         kernel_size: Sequence[int] = (3, 3)
-) -> jax.Array:
+) -> torch.Tensor:
 
     """Sum pool labels using deltas.
 
     Parameters
     ----------
-    deltas : jax.Array
+    labels : torch.Tensor
+        Labels.
+    deltas : torch.Tensor
         Displacement vectors.
-    labels : jax.Array
-        Binary labels.
     kernel_size : Sequence[int], optional
         Kernel size or window size of the sum pooling operation. Default is (3, 3).
 
     Returns
     -------
-    pooled_labels : jax.Array
+    pooled_labels : torch.Tensor
         Pooled labels.
     """
 
+    h, w = labels.shape
+    kh, kw = kernel_size
+    device = labels.device
+    padding = (kh // 2, kw // 2)
+    patch_size = kh * kw
+
     # Generate an index map.
-    i, j = jnp.arange(deltas.shape[0]), jnp.arange(deltas.shape[1])
-    index_map = jnp.stack(jnp.meshgrid(i, j, indexing='ij'), axis=-1)
+    i = torch.arange(h, device=device)
+    j = torch.arange(w, device=device)
+    ii, jj = torch.meshgrid(i, j, indexing='ij')
+    index_map = torch.stack((ii, jj))
 
     # Compute the pixel convergence array after applying deltas.
-    convergence = jnp.rint(deltas + index_map).astype(int)
-
-    # Pad convergence and labels arrays.
-    pad_width = (((kernel_size[0] - 1) // 2, ) * 2, ((kernel_size[1] - 1) // 2, ) * 2)
-    convergence = jnp.pad(convergence, (*pad_width, (0, 0)))
-    labels = jnp.pad(labels, pad_width)
+    convergence = torch.round(deltas + index_map)
 
     # Sum pool the label values of pixels that converge at each pixel location.
-    pooled_labels = vmap_sum_convergent_labels(convergence, labels, kernel_size, i, j)
+    unfold = nn.Unfold(kernel_size=kernel_size, padding=padding)
+    convergence = unfold(convergence[None]).view(2, patch_size, h, w).int()
+    labels = unfold(labels[None, None]).view(patch_size, h, w)
+    matches = (convergence == index_map[:, None]).all(dim=0)
+    pooled_labels = (labels * matches).sum(dim=0)
 
     return pooled_labels
 
 
-vmap_sum_pool = vmap(sum_pool, in_axes=(0, 0, None))
+vmap_deformable_sum_pool = torch.vmap(deformable_sum_pool, in_dims=(0, 0, None))
 
 
-def _sum_convergent_labels(
-        convergence: jax.Array,
-        labels: jax.Array,
-        kernel_size: Sequence[int],
-        i: jax.Array,
-        j: jax.Array
-) -> jax.Array:
-
-    """Sum pool the label values of pixels that converge at a given pixel location.
-
-    Parameters
-    ----------
-    convergence : jax.Array
-        Convergence array.
-    labels : jax.Array
-        Binary labels.
-    kernel_size : Sequence[int]
-        Kernel size or window size to search for labels convergence.
-    i : jax.Array
-        Pixel row index.
-    j : jax.Array
-        Pixel column index.
-
-    Returns
-    -------
-    pooled_label : jax.Array
-        Pooled label.
-    """
-
-    # Extract the convergence and labels arrays in the kernel.
-    convergence = dynamic_slice(convergence, (i, j, 0), (*kernel_size, 2))
-    labels = dynamic_slice(labels, (i, j), kernel_size)
-
-    # Find pixel sources that converge at the given pixel location.
-    sources = jnp.all(convergence == jnp.array((i, j)), axis=-1)
-
-    # Sum pool the label values at pixel sources.
-    pooled_label = jnp.sum(sources * labels)
-
-    return pooled_label
-
-
-vmap_sum_convergent_labels = vmap(
-    vmap(_sum_convergent_labels, in_axes=(None, None, None, None, 0)),
-    in_axes=(None, None, None, 0, None)
-)
-
-
-def smooth_sum_pool(
-        deltas: jax.Array,
-        labels: jax.Array,
-        sigma: float = 0.5,
+def peak_local_softmax(
+        labels: torch.Tensor,
         kernel_size: Sequence[int] = (3, 3),
-        epsilon: float = 1e-7
-) -> jax.Array:
-
-    """Sum pool labels using deltas.
-
-    Unlike conventional pooling, which takes a discrete summation, each pixel's contribution to the pooled result of
-    neighboring pixels is determined by an isotropic Gaussian distribution. This Gaussian is centered at the pixel's
-    convergence coordinates given by `delta` and has standard deviation `sigma` in each axis. This operation is
-    designed to be differentiable and thus suitable to be used within a loss function during training.
+        temperature: float = 0.05,
+) -> torch.Tensor:
+    
+    """Smooth variant of `peak_local_max` with softmax pooling to find peaks in labels.
 
     Parameters
     ----------
-    deltas : jax.Array
-        Displacement vectors.
-    labels : jax.Array
-        Binary labels.
-    sigma : float
-        Standard deviation of the Gaussian distribution. Default is 0.5.
+    labels : torch.Tensor
+        Labels.
     kernel_size : Sequence[int], optional
-        Kernel size or window size of the sum pooling operation. Default is (3, 3).
-    epsilon : float, optional
-        Small constant for numerical stability. Default is 1e-7.
+        Kernel size or window size of the softmax pooling operation. Default is (3, 3).
+    temperature : float
+        Temperature parameter for softmax. Default is 0.05.
 
     Returns
     -------
-    pooled_labels : jax.Array
-        Pooled labels.
+    peaked_labels : torch.Tensor
+        Peaked labels.
     """
 
-    # Generate an index map.
-    i, j = jnp.arange(deltas.shape[0]), jnp.arange(deltas.shape[1])
-    index_map = jnp.stack(jnp.meshgrid(i, j, indexing='ij'), axis=-1)
+    h, w = labels.shape
+    kh, kw = kernel_size
+    padding = (kh // 2, kw // 2)
 
-    # Compute the pixel convergence array after applying deltas.
-    convergence = deltas + index_map
+    # Find peaks in labels via softmax-weighted pooling.
+    unfold = nn.Unfold(kernel_size=kernel_size, padding=padding)
+    labels = unfold(labels[None, None]).view(kh * kw, h, w)
+    weights = F.softmax(labels / temperature, dim=0)
+    center_index = kw * padding[0] + padding[1]
+    peaked_labels = labels[center_index] * weights[center_index]
 
-    # Pad convergence and labels arrays.
-    pad_width = (((kernel_size[0] - 1) // 2, ) * 2, ((kernel_size[1] - 1) // 2, ) * 2)
-    index_map = jnp.pad(index_map, (*pad_width, (0, 0)))
-    labels = jnp.pad(labels, pad_width)
-
-    # Compute Gaussian distributions.
-    gaussians = vmap_compute_gaussian_distributions(index_map, convergence, sigma, kernel_size, epsilon, i, j)
-    gaussians = jnp.pad(gaussians, (*pad_width, (0, 0), (0, 0)))
-
-    # Distribute labels.
-    pooled_labels = vmap_distribute_labels(gaussians, labels, kernel_size, i, j)
-
-    return pooled_labels
+    return peaked_labels
 
 
-vmap_smooth_sum_pool = vmap(smooth_sum_pool, in_axes=(0, 0, None, None, None))
-
-
-def _compute_gaussian_distributions(
-        index_map: jax.Array,
-        convergence: jax.Array,
-        sigma: float,
-        kernel_size: Sequence[int],
-        epsilon: float,
-        i: jax.Array,
-        j: jax.Array
-) -> jax.Array:
-
-    """Compute a Gaussian distribution centered at the convergence coordinates of a given pixel location.
-
-    Parameters
-    ----------
-    index_map : jax.Array
-        Index map.
-    convergence : jax.Array
-        Convergence array.
-    sigma : float
-        Standard deviation of the Gaussian distribution.
-    kernel_size : Sequence[int]
-        Kernel size or window size of the Gaussian distribution.
-    epsilon : float
-        Small constant for numerical stability.
-    i : jax.Array
-        Pixel row index.
-    j : jax.Array
-        Pixel column index.
-
-    Returns
-    -------
-    gaussian : jax.Array
-        Gaussian distribution centered at the convergence coordinates of the given pixel location.
-    """
-
-    # Extract the index map in the kernel.
-    index_map = dynamic_slice(index_map, (i, j, 0), (*kernel_size, 2))
-
-    # Compute the Gaussian distribution centered at the convergence coordinates.
-    gaussian = jnp.exp(-jnp.sum((index_map - convergence) ** 2, axis=-1) / (2 * sigma ** 2))
-    gaussian = gaussian / (jnp.sum(gaussian) + epsilon)
-
-    return gaussian
-
-
-vmap_compute_gaussian_distributions = vmap(
-    vmap(_compute_gaussian_distributions, in_axes=(None, 0, None, None, None, None, 0)),
-    in_axes=(None, 0, None, None, None, 0, None)
-)
-
-
-def _distribute_labels(
-        distributions: jax.Array,
-        labels: jax.Array,
-        kernel_size: Sequence[int],
-        i: jax.Array,
-        j: jax.Array
-) -> jax.Array:
-
-    """Distribute the label values of nearby pixels according to a given set of distributions.
-
-    Parameters
-    ----------
-    distributions : jax.Array
-        Distributions array.
-    labels : jax.Array
-        Binary labels.
-    kernel_size : Sequence[int]
-        Kernel size or window size to distribute labels.
-    i : jax.Array
-        Pixel row index.
-    j : jax.Array
-        Pixel column index.
-
-    Returns
-    -------
-    pooled_label : jax.Array
-        Pooled label.
-    """
-
-    # Extract the distributions and labels arrays in the kernel.
-    distributions = dynamic_slice(distributions, (i, j, 0, 0), (*kernel_size, *kernel_size))
-    labels = dynamic_slice(labels, (i, j), kernel_size)
-
-    # Extract weights from the distributions array.
-    k, m = np.indices(kernel_size)
-    weights = distributions[k, m, kernel_size[0] - 1 - k, kernel_size[1] - 1 - m]
-
-    # Distribute the label values of nearby pixels.
-    pooled_label = jnp.sum(weights * labels)
-
-    return pooled_label
-
-
-vmap_distribute_labels = vmap(
-    vmap(_distribute_labels, in_axes=(None, None, None, None, 0)),
-    in_axes=(None, None, None, 0, None)
-)
+vmap_peak_local_softmax = torch.vmap(peak_local_softmax, in_dims=(0, None, None))
 
 
 def pad_and_stack(images: Sequence[np.ndarray]) -> np.ndarray:

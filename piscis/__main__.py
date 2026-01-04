@@ -3,7 +3,7 @@ import imageio.v3 as iio
 import numpy as np
 
 from pathlib import Path
-from tqdm.auto import tqdm
+from tqdm import tqdm
 
 from piscis import Piscis
 from piscis.training import train_model
@@ -26,15 +26,14 @@ def main():
                                 help="Path to save predicted spots as CSV.")
     predict_parser.add_argument('--model-name', type=str, default='20230905',
                                 help="Model name.")
-    predict_parser.add_argument('--batch-size', type=int, default=4,
+    predict_parser.add_argument('--batch-size', type=int, default=1,
                                 help="Batch size for the CNN.")
     predict_parser.add_argument('--stack', action='store_true',
                                 help="Whether the input is a stack of images.")
     predict_parser.add_argument('--scale', type=float, default=1.0,
                                 help="Scale factor for rescaling the input.")
-    predict_parser.add_argument('--threshold', type=float, default=1.0,
-                                help="Spot detection threshold. Can be interpreted as the minimum number of fully "
-                                     "confident pixels necessary to identify a spot.")
+    predict_parser.add_argument('--threshold', type=float, default=0.5,
+                                help="Spot detection threshold.")
     predict_parser.add_argument('--min-distance', type=int, default=1,
                                 help="Minimum distance between spots.")
 
@@ -42,70 +41,55 @@ def main():
     train_parser = subparsers.add_parser('train', formatter_class=formatter_class,
                                          help="Train a SpotsModel")
     train_parser.add_argument('model_name', type=str,
-                              help="Name of a new or existing model.")
+                              help="Model name.")
     train_parser.add_argument('dataset_path', type=str,
-                              help="Path to the directory containing training and validation datasets.")
+                              help="Path to a dataset or path to a directory containing multiple datasets.")
     train_parser.add_argument('--initial-model-name', type=str, default=None,
                               help="Name of an existing model to initialize the weights.")
     train_parser.add_argument('--adjustment', type=str, default='standardize',
                               help="Adjustment type applied to images. Supported types are 'normalize' and "
                                    "'standardize'.")
     train_parser.add_argument('--input-size', type=int, nargs=2, default=(256, 256),
-                              help="Size of the input images used for training.")
+                              help="Input size used for training.")
     train_parser.add_argument('--random-seed', type=int, default=0,
                               help="Random seed used for initialization and training.")
     train_parser.add_argument('--batch-size', type=int, default=4,
                               help="Batch size for training.")
-    train_parser.add_argument('--learning-rate', type=float, default=0.2,
+    train_parser.add_argument('--num-workers', type=int, default=0,
+                              help="Number of workers for data loading.")
+    train_parser.add_argument('--learning-rate', type=float, default=0.1,
                               help="Learning rate for the optimizer.")
-    train_parser.add_argument('--weight-decay', type=float, default=1e-4,
+    train_parser.add_argument('--weight-decay', type=float, default=1e-5,
                               help="Strength of the weight decay regularization.")
-    train_parser.add_argument('--dropout-rate', type=float, default=0.2,
-                              help="Dropout rate at skip connections.")
-    train_parser.add_argument('--epochs', type=int, default=400,
+    train_parser.add_argument('--epochs', type=int, default=500,
                               help="Number of epochs to train the model for.")
-    train_parser.add_argument('--warmup-fraction', type=float, default=0.05,
+    train_parser.add_argument('--warmup-fraction', type=float, default=0.04,
                               help="Fraction of epochs for learning rate warmup.")
-    train_parser.add_argument('--decay-fraction', type=float, default=0.5,
+    train_parser.add_argument('--decay-fraction', type=float, default=0.4,
                               help="Fraction of epochs for learning rate decay.")
+    train_parser.add_argument('--l2-loss-weight', type=float, default=0.1,
+                              help="Weight for the masked L2 loss term in the overall loss function.")
     train_parser.add_argument('--decay-transitions', type=int, default=10,
                               help="Number of times to decay the learning rate.")
     train_parser.add_argument('--decay-factor', type=float, default=0.5,
                               help="Multiplicative factor of each learning rate decay transition.")
     train_parser.add_argument('--dilation-iterations', type=int, default=1,
-                              help="Number of iterations to dilate ground truth labels to minimize class imbalance and "
-                                   "misclassifications due to minor offsets.")
+                              help="Number of iterations to dilate ground truth labels to minimize class imbalance "
+                                   "and misclassifications due to minor offsets.")
     train_parser.add_argument('--max-distance', type=float, default=3.0,
                               help="Maximum distance for matching predicted and ground truth displacement vectors.")
-    train_parser.add_argument('--l2-loss-weight', type=float, default=0.25,
-                              help="Weight for the L2 loss term.")
-    train_parser.add_argument('--bce-loss-weight', type=float, default=0.0,
-                              help="Weight for the bce loss term.")
-    train_parser.add_argument('--dice-loss-weight', type=float, default=0.0,
-                              help="Weight for the dice loss term.")
-    train_parser.add_argument('--focal-loss-weight', type=float, default=0.0,
-                              help="Weight for the focal loss term.")
-    train_parser.add_argument('--smoothf1-loss-weight', type=float, default=1.0,
-                              help="Weight for the smoothf1 loss term.")
-    train_parser.add_argument('--save-checkpoints', default=True, action=argparse.BooleanOptionalAction,
-                              help="Save checkpoints during training.")
+    train_parser.add_argument('--temperature', type=float, default=0.05,
+                              help="Temperature parameter for softmax.")
+    train_parser.add_argument('--epsilon', type=float, default=1e-7,
+                              help="Small constant for numerical stability.")
+    train_parser.add_argument('--checkpoint_every', type=int, default=10,
+                              help="Number of epochs between saving model checkpoints.")
+    train_parser.add_argument('--device', type=str, default='cuda',
+                              help="Device for training.")
 
     args = parser.parse_args()
 
     if args.command == 'train':
-
-        # Create the loss weights dictionary.
-        loss_weights = {}
-        if args.l2_loss_weight > 0:
-            loss_weights['l2'] = args.l2_loss_weight
-        if args.bce_loss_weight > 0:
-            loss_weights['bce'] = args.bce_loss_weight
-        if args.dice_loss_weight > 0:
-            loss_weights['dice'] = args.dice_loss_weight
-        if args.focal_loss_weight > 0:
-            loss_weights['focal'] = args.focal_loss_weight
-        if args.smoothf1_loss_weight > 0:
-            loss_weights['smoothf1'] = args.smoothf1_loss_weight
 
         # Train the model.
         train_model(
@@ -116,18 +100,21 @@ def main():
             input_size=args.input_size,
             random_seed=args.random_seed,
             batch_size=args.batch_size,
+            num_workers=args.num_workers,
             learning_rate=args.learning_rate,
             weight_decay=args.weight_decay,
-            dropout_rate=args.dropout_rate,
             epochs=args.epochs,
             warmup_fraction=args.warmup_fraction,
             decay_fraction=args.decay_fraction,
             decay_transitions=args.decay_transitions,
             decay_factor=args.decay_factor,
+            l2_loss_weight=args.l2_loss_weight,
             dilation_iterations=args.dilation_iterations,
             max_distance=args.max_distance,
-            loss_weights=loss_weights,
-            save_checkpoints=args.save_checkpoints
+            temperature=args.temperature,
+            epsilon=args.epsilon,
+            checkpoint_every=args.checkpoint_every,
+            device=args.device
         )
 
     elif args.command == 'predict':

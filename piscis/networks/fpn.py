@@ -1,166 +1,180 @@
-import jax
-import jax.numpy as jnp
+import torch
+import torch.nn as nn
 
-from flax import linen as nn
 from functools import partial
-from jax.image import resize
-from typing import Any, Callable, Optional, Sequence, Tuple
+from typing import Any, Optional, Sequence, Tuple, Union
 
 from piscis.networks.conv import Conv
 
 ModuleDef = Any
 
-BatchActConv = partial(Conv, layers=['bn', 'act', 'conv'])
-BatchConv = partial(Conv, layers=['bn', 'conv'], act=None)
+BatchActConv = partial(Conv, bias=True, layers=['bn', 'act', 'conv'])
+BatchConv = partial(Conv, bias=True, layers=['bn', 'conv'])
 
 
 class BatchConvStyle(nn.Module):
 
     """Convolutional block with batch norm, activation, and style transfer.
 
-    Attributes
+    Parameters
     ----------
-    features : int
-        Number of output features.
-    kernel_size : Sequence[int]
+    in_channels : int
+        Number of input channels.
+    out_channels : int
+        Number of output channels.
+    style_channels : int
+        Number of style channels.
+    kernel_size : Union[int, Sequence[int]]
         Size of the convolutional kernel.
     conv : ModuleDef
         Convolution module.
     dense : ModuleDef
         Dense module.
-    dropout : ModuleDef
-        Dropout module.
     bn : ModuleDef
         Batch norm module.
-    act : Callable
+    act : ModuleDef
         Activation function.
     """
 
-    features: int
-    kernel_size: Sequence[int]
-    conv: ModuleDef
-    dense: ModuleDef
-    dropout: ModuleDef
-    bn: ModuleDef
-    act: Callable
-
-    @nn.compact
-    def __call__(
+    def __init__(
             self,
-            style: Optional[jax.Array],
-            x: jax.Array,
-            y: Optional[jax.Array] = None
-    ) -> jax.Array:
+            in_channels: int,
+            out_channels: int,
+            style_channels: int,
+            kernel_size: Union[int, Sequence[int]],
+            conv: ModuleDef,
+            dense: ModuleDef,
+            bn: ModuleDef,
+            act: ModuleDef
+    ) -> None:
+        
+        super().__init__()
 
-        conv = partial(
-            BatchActConv,
-            features=self.features,
-            kernel_size=self.kernel_size,
-            conv=self.conv,
-            bn=self.bn,
-            act=self.act
+        self.conv = BatchActConv(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            conv=conv,
+            bn=bn,
+            act=act
         )
 
+        self.dense = dense(
+            in_features=style_channels,
+            out_features=out_channels
+        )
+
+    def forward(
+            self,
+            style: Optional[torch.Tensor],
+            x: torch.Tensor,
+            y: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+
         if y is not None:
-            x = self.dropout()(x)
             x = x + y
 
         if style is not None:
-            full = partial(
-                self.dense,
-                features=self.features
-            )
-            feat = full()(style)
-            x = x + feat[:, None, None]
+            feat = self.dense(style)
+            x = x + feat[:, :, None, None]
 
-        x = conv()(x)
+        x = self.conv(x)
 
         return x
-
+    
 
 class UpConv(nn.Module):
 
     """Upsampling convolutional block.
 
-    Attributes
+    Parameters
     ----------
-    features : int
-        Number of output features.
-    kernel_size : Sequence[int]
+    in_channels : int
+        Number of input channels.
+    out_channels : int
+        Number of output channels.
+    style_channels : int
+        Number of style channels.
+    kernel_size : Union[int, Sequence[int]]
         Size of the convolutional kernel.
     conv : ModuleDef
         Convolution module.
     dense : ModuleDef
         Dense module.
-    dropout : ModuleDef
-        Dropout module.
     bn : ModuleDef
         Batch norm module.
-    act : Callable
+    act : ModuleDef
         Activation function.
     """
 
-    features: int
-    kernel_size: Sequence[int]
-    conv: ModuleDef
-    dense: ModuleDef
-    dropout: ModuleDef
-    bn: ModuleDef
-    act: Callable
-
-    @nn.compact
-    def __call__(
+    def __init__(
             self,
-            x: jax.Array,
-            y: Optional[jax.Array],
-            style: Optional[jax.Array]
-    ) -> jax.Array:
+            in_channels: int,
+            out_channels: int,
+            style_channels: int,
+            kernel_size: Union[int, Sequence[int]],
+            conv: ModuleDef,
+            dense: ModuleDef,
+            bn: ModuleDef,
+            act: ModuleDef
+    ) -> None:
 
-        conv = partial(
-            BatchActConv,
-            features=self.features,
-            kernel_size=self.kernel_size,
-            conv=self.conv,
-            bn=self.bn,
-            act=self.act
+        super().__init__()
+        
+        self.proj = BatchConv(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=1,
+            conv=conv,
+            bn=bn
+        )
+
+        self.conv = BatchActConv(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            conv=conv,
+            bn=bn,
+            act=act
         )
 
         convs = partial(
             BatchConvStyle,
-            features=self.features,
-            kernel_size=self.kernel_size,
-            conv=self.conv,
-            dense=self.dense,
-            dropout=self.dropout,
-            bn=self.bn,
-            act=self.act
+            in_channels=out_channels,
+            out_channels=out_channels,
+            style_channels=style_channels,
+            kernel_size=kernel_size,
+            conv=conv,
+            dense=dense,
+            bn=bn,
+            act=act
         )
 
-        proj = partial(
-            Conv,
-            features=self.features,
-            kernel_size=(1, 1),
-            conv=self.conv,
-            bn=self.bn,
-            act=None,
-            layers=['bn', 'conv']
-        )
+        self.convs_0 = convs()
+        self.convs_1 = convs()
+        self.convs_2 = convs()
 
-        x = proj()(x) + convs()(style, conv()(x), y)
-        x = x + convs()(style, convs()(style, x))
+    def forward(
+            self,
+            x: torch.Tensor,
+            y: Optional[torch.Tensor],
+            style: Optional[torch.Tensor]
+    ) -> torch.Tensor:
+
+        x = self.proj(x) + self.convs_0(style, self.conv(x), y)
+        x = x + self.convs_2(style, self.convs_1(style, x))
 
         return x
-
+    
 
 class MakeStyle(nn.Module):
 
     """Style transfer module."""
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
 
-    @nn.compact
-    def __call__(self, x: jax.Array) -> jax.Array:
-
-        style = jnp.mean(x, axis=(1, 2))
-        style = style / jnp.linalg.norm(style, axis=1, keepdims=True)
+        style = x.mean(dim=tuple(range(2, x.ndim)))
+        style = style / torch.linalg.norm(style, dim=-1, keepdim=True)
 
         return style
 
@@ -169,217 +183,191 @@ class Decoder(nn.Module):
 
     """Decoder module.
 
-    Attributes
+    Parameters
     ----------
-    kernel_size : Sequence[int]
+    stage_sizes : Sequence[int]
+        Number of channels at each stage.
+    kernel_size : Union[int, Sequence[int]]
         Size of the convolutional kernel.
-    aggregate : str
-        Aggregation mode for feature maps. Supported modes are 'sum' and 'concatenate'.
     conv : ModuleDef
         Convolution module.
     dense : ModuleDef
         Dense module.
-    dropout : ModuleDef
-        Dropout module.
     bn : ModuleDef
         Batch norm module.
-    act : Callable
+    act : ModuleDef
         Activation function.
     """
 
-    kernel_size: Sequence[int]
-    aggregate: str
-    conv: ModuleDef
-    dense: ModuleDef
-    dropout: ModuleDef
-    bn: ModuleDef
-    act: Callable
-
-    @nn.compact
-    def __call__(
+    def __init__(
             self,
-            style: jax.Array,
-            xd: Sequence[jax.Array]
-    ) -> jax.Array:
+            stage_sizes: Sequence[int],
+            kernel_size: Union[int, Sequence[int]],
+            conv: ModuleDef,
+            dense: ModuleDef,
+            bn: ModuleDef,
+            act: ModuleDef
+    ) -> None:
+        
+        super().__init__()
+
+        self.stage_sizes = stage_sizes
 
         up = partial(
             UpConv,
-            kernel_size=self.kernel_size,
-            conv=self.conv,
-            dense=self.dense,
-            dropout=self.dropout,
-            bn=self.bn,
-            act=self.act
+            style_channels=stage_sizes[-1],
+            kernel_size=kernel_size,
+            conv=conv,
+            dense=dense,
+            bn=bn,
+            act=act
         )
 
-        stage_sizes = [x.shape[-1] for x in xd]
+        self.upsample = nn.Upsample(scale_factor=2, mode='nearest')
 
-        # Create a list to store feature maps.
-        feature_maps = []
+        self.up_blocks = nn.ModuleList()
+        self.up_blocks.append(
+            up(
+                in_channels=self.stage_sizes[-1],
+                out_channels=self.stage_sizes[-1]
+            )
+        )
+        for i in range(1, len(self.stage_sizes)):
+            self.up_blocks.append(up(in_channels=self.stage_sizes[-i], out_channels=self.stage_sizes[-i - 1]))
 
-        f = up(
-            features=stage_sizes[-1],
-        )(xd[-1], xd[-1], style)
-        feature_maps.append(f)
+        self.resize_up_blocks = nn.ModuleList()
+        self.out_channels = self.stage_sizes[0]
+        for i in range(len(self.stage_sizes) - 1):
+            resize_up_block = nn.ModuleList()
+            in_channels = self.stage_sizes[-1 - i]
+            for j in range(len(self.stage_sizes) - 1 - i):
+                if j > 0:
+                    in_channels = self.out_channels
+                resize_up_block.append(
+                    up(in_channels=in_channels, out_channels=self.out_channels)
+                )
+            self.resize_up_blocks.append(resize_up_block)
+        
+    def forward(
+            self,
+            style: torch.Tensor,
+            xd: Sequence[torch.Tensor]
+    ) -> torch.Tensor:
 
-        for i, features in reversed(list(enumerate(stage_sizes[:-1]))):
-            f = _interpolate(f, scale=2, method='nearest')
-            f = up(
-                features=features,
-            )(f, xd[i], style)
-            feature_maps.append(f)
+        f = xd[-1]
+        feature_maps = None
 
-        # Resize feature maps.
-        for i in range(len(feature_maps[:-1])):
-            for j in range(len(feature_maps) - i - 1):
-                feature_maps[i] = _interpolate(feature_maps[i], scale=2, method='nearest')
-                feature_maps[i] = up(
-                    features=stage_sizes[0]
-                )(feature_maps[i], None, style)
+        for i, up in enumerate(self.up_blocks):
+            f = up(f, xd[-i - 1], style)
+            f_up = f
+            if i < len(self.resize_up_blocks):
+                for resize_up_block in self.resize_up_blocks[i]:
+                    f_up = self.upsample(f_up)
+                    f_up = resize_up_block(f_up, None, style)
+            if feature_maps is None:
+                feature_maps = f_up
+            else:
+                feature_maps = feature_maps + f_up
+            f = self.upsample(f)
 
-        # Aggregate feature maps.
-        if self.aggregate == 'sum':
-            aggregate_feature_maps = jnp.sum(jnp.array(feature_maps), axis=0)
-        elif self.aggregate == 'concatenate':
-            aggregate_feature_maps = jnp.concatenate(feature_maps, axis=-1)
-        else:
-            raise ValueError(f"Aggregation mode is not supported.")
-
-        return aggregate_feature_maps
+        return feature_maps
 
 
 class FPN(nn.Module):
 
     """Feature pyramid network.
 
-    Attributes
+    Parameters
     ----------
     encoder : ModuleDef
         Encoder module.
     encoder_levels : Sequence[int]
         Encoder levels to use for the feature pyramid.
-    features : int
-        Number of output features.
-    kernel_size : Sequence[int]
-        Size of the convolutional kernel.
-    style : bool
-        Whether to use style transfer.
-    aggregate : str
-        Aggregation mode for feature maps. Supported modes are 'sum' and 'concatenate'.
-    dropout_rate : float
-        Dropout rate at skip connections.
-    bn_momentum : float
-        Momentum parameter for batch norm layers.
-    bn_epsilon : float
-        Epsilon parameter for batch norm layers.
-    conv : ModuleDef
-        Convolution module.
-    dense : ModuleDef
-        Dense module.
-    bn : ModuleDef
-        Batch norm module.
-    act : Callable
-        Activation function.
+    in_channels : int
+        Number of input channels.
+    out_channels : int
+        Number of output channels.
+    kernel_size : Union[int, Sequence[int]], optional
+        Size of the convolutional kernel. Default is s3.
+    style : bool, optional
+        Whether to use style transfer. Default is True.
+    bn_momentum : float, optional
+        Momentum parameter for batch norm layers. Default is 0.1.
+    bn_epsilon : float, optional
+        Epsilon parameter for batch norm layers. Default is 1e-5.
+    conv : ModuleDef, optional
+        Convolution module. Default is nn.Conv2d.
+    dense : ModuleDef, optional
+        Dense module. Default is nn.Linear.
+    bn : ModuleDef, optional
+        Batch norm module. Default is nn.BatchNorm2d.
+    act : ModuleDef, optional
+        Activation function. Default is nn.SiLU.
     """
 
-    encoder: ModuleDef
-    encoder_levels: Sequence[int]
-    features: int
-    kernel_size: Sequence[int] = (3, 3)
-    style: bool = True
-    aggregate: str = 'sum'
-    dropout_rate: float = 0.2
-    bn_momentum: float = 0.9
-    bn_epsilon: float = 1e-05
-    conv: ModuleDef = nn.Conv
-    dense: ModuleDef = nn.Dense
-    dropout: ModuleDef = nn.Dropout
-    bn: ModuleDef = nn.BatchNorm
-    act: Callable = nn.swish
-
-    @nn.compact
-    def __call__(
+    def __init__(
             self,
-            x: jax.Array,
-            train: bool = True
-    ) -> Tuple[jax.Array, Optional[jax.Array]]:
+            encoder: ModuleDef,
+            encoder_levels: Sequence[int],
+            in_channels: int,
+            out_channels: int,
+            kernel_size: Union[int, Sequence[int]] = 3,
+            style: bool = True,
+            bn_momentum: float = 0.1,
+            bn_epsilon: float = 1e-05,
+            conv: ModuleDef = nn.Conv2d,
+            dense: ModuleDef = nn.Linear,
+            bn: ModuleDef = nn.BatchNorm2d,
+            act: ModuleDef = nn.SiLU
+    ) -> None:
+        
+        super().__init__()
 
-        dropout = partial(
-            self.dropout,
-            rate=self.dropout_rate,
-            deterministic=not train
-        )
+        self.encoder = encoder(in_channels=in_channels)
+        self.encoder_levels = sorted(set(encoder_levels))
+        self.style = style
+
+        if self.style:
+            self.make_style = MakeStyle()
 
         bn = partial(
-            self.bn,
-            use_running_average=not train,
-            momentum=self.bn_momentum,
-            epsilon=self.bn_epsilon,
+            bn,
+            eps=bn_epsilon,
+            momentum=bn_momentum
         )
 
-        decoder = partial(
-            Decoder,
-            kernel_size=self.kernel_size,
-            aggregate=self.aggregate,
-            conv=self.conv,
-            dense=self.dense,
-            dropout=dropout,
+        self.decoder = Decoder(
+            stage_sizes=[self.encoder.stage_sizes[i] for i in self.encoder_levels],
+            kernel_size=kernel_size,
+            conv=conv,
+            dense=dense,
             bn=bn,
-            act=self.act
+            act=act
         )
 
-        output = partial(
-            BatchActConv,
-            features=self.features,
-            kernel_size=(1, 1),
-            conv=self.conv,
+        self.output = BatchActConv(
+            in_channels=self.decoder.out_channels,
+            out_channels=out_channels,
+            kernel_size=1,
+            conv=conv,
             bn=bn,
-            act=self.act
+            act=act
         )
+
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
 
         # Get encoder outputs.
-        x = self.encoder()(x, train=train, capture_list=self.encoder_levels)
+        x = self.encoder(x, capture_list=self.encoder_levels)
         x = [x[i] for i in self.encoder_levels]
 
         # Make style vectors if necessary.
         if self.style:
-            style = MakeStyle()(x[-1])
+            style = self.make_style(x[-1])
         else:
             style = None
 
         # Apply decoder and output block.
-        x = decoder()(style, x)
-        x = output()(x)
+        x = self.decoder(style, x)
+        x = self.output(x)
 
         return x, style
-
-
-def _interpolate(
-        x: jax.Array,
-        scale: float,
-        *args: Any,
-        **kwargs: Any
-):
-
-    """Interpolate feature maps.
-
-    Parameters
-    ----------
-    x : jax.Array
-        Feature maps.
-    scale : float
-        Scale factor.
-    *args : Any
-        Positional arguments for the resize function.
-    **kwargs : Any
-        Keyword arguments for the resize function.
-
-    Returns
-    -------
-    x : jax.Array
-        Interpolated feature maps.
-    """
-
-    x = resize(x, (x.shape[0], round(x.shape[1] * scale), round(x.shape[2] * scale), x.shape[3]), *args, **kwargs)
-
-    return x
