@@ -1,11 +1,11 @@
 Getting Started
 ===============
 
-The easiest way to get started with Piscis is via `NimbusImage <https://github.com/Kitware/UPennContrast>`_ , a cloud-computing platform for image analysis. If you prefer a local installation, please see :doc:`Installation <installation>`.
+The easiest way to get started with Piscis is via `NimbusImage <https://github.com/arjunrajlaboratory/NimbusImage>`_ , a cloud-computing platform for image analysis. If you prefer a local installation, please see :doc:`Installation <installation>`.
 
 **Step 1: Sign Up for NimbusImage**
 
-While NimbusImage can be installed locally, we strongly recommend you start by trying NimbusImage from an existing server. Visit `nimbusimage.org <https://nimbusimage.org>`_ to sign up for a free account.
+While NimbusImage can be installed locally, we strongly recommend you start by trying NimbusImage from an existing server. Visit `nimbusimage.com <https://nimbusimage.com>`_ to sign up for a free account.
 
 **Step 2: Upload a Dataset**
 
