@@ -2,7 +2,6 @@ import numpy as np
 import tifffile
 import torch
 
-from flax import serialization
 from pathlib import Path
 
 from piscis.paths import MODELS_DIR
@@ -22,9 +21,19 @@ def convert_jax_to_torch_state_dict(jax_model_name, state_dict=None, verbose=Fal
 
     Raises
     ------
+    ModuleNotFoundError
+        If Flax cannot be imported.
     ValueError
         If there is a shape mismatch between JAX and PyTorch weights.
     """
+
+    # Try importing Flax.
+    try:
+        from flax import serialization
+    except ImportError:
+        raise ImportError(
+            "Flax is required for converting JAX models. Please install it via 'pip install flax'."
+        ) from None
 
     # Get state dict.
     if state_dict is None:
