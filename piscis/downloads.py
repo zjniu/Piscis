@@ -27,7 +27,7 @@ def download_pretrained_model(
 
     # Download the model if available.
     fs = HfFileSystem()
-    hf_model_path = f'{HF_MODELS_DIR}{f'{model_name}.pt'}'
+    hf_model_path = f'{HF_MODELS_DIR}{model_name}.pt'
     if fs.exists(hf_model_path):
         fs.download(hf_model_path, str(MODELS_DIR / f'{model_name}.pt'), progress=False)
     else:
