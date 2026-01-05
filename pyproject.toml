@@ -28,6 +28,7 @@ dependencies = [
     'scikit-image',
     'scipy',
     'torch',
+    'torchvision',
     'tqdm',
     'xarray'
 ]

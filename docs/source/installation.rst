@@ -22,6 +22,7 @@ Piscis relies on the following packages, which are automatically installed with 
 - `scikit-image <https://scikit-image.org/>`_
 - `scipy <https://scipy.org/>`_
 - `torch <https://pytorch.org/>`_
+- `torchvision <https://pytorch.org/>`_
 - `tqdm <https://github.com/tqdm/tqdm>`_
 - `xarray <https://xarray.dev/>`_
 
