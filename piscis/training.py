@@ -468,7 +468,7 @@ def train_model(
             torch.save(checkpoint, best_checkpoint_path)
         
         # Save a checkpoint if necessary.
-        if best or (epoch % checkpoint_every == 0):
+        if best or (epoch % checkpoint_every == 0) or (epoch == epochs):
             checkpoint = {
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
