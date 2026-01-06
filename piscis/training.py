@@ -316,7 +316,7 @@ def train_model(
                                             num_workers=num_workers, seed=int(child_seeds[0]))
     val_dataloader = get_torch_dataloader(dataset['val'], image_size=input_size, batch_size=batch_size,
                                           num_workers=num_workers, seed=int(child_seeds[1]))
-    channels = next(iter(val_dataloader))[0][0].shape[0]
+    channels = next(iter(train_dataloader))[0][0].shape[0]
 
     # Create the model.
     torch.manual_seed(child_seeds[2])
@@ -377,7 +377,7 @@ def train_model(
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         metrics_log = checkpoint['metrics_log']
-        best_val_loss = min(metrics['val_loss'] for metrics in metrics_log)
+        best_val_loss = min(metrics.get('val_loss', float('inf')) for metrics in metrics_log)
 
     else:
 
@@ -425,27 +425,38 @@ def train_model(
         # Train for a single epoch.
         train_metrics = train_epoch(model, pbar, optimizer, l2_loss_weight, dilation_iterations, max_distance,
                                     temperature, epsilon, device)
+        metrics = {'epoch': epoch, 'lr': optimizer.param_groups[0]['lr']} | train_metrics
         train_summary = f'{pbar_desc}: ' + \
                         ', '.join([f'{k}={train_metrics[k]:.4f}' for k in ('loss', 'smoothf1', 'l2')])
-        # pbar.close()
-        print(train_summary, end='', flush=True)
 
-        # Validate for a single epoch.
-        val_metrics = val_epoch(model, val_dataloader, l2_loss_weight, dilation_iterations, max_distance,
-                                temperature, epsilon, device)
-        val_summary = ' | ' + ', '.join([f'{k}={val_metrics[k]:.4f}' for k in ('val_loss', 'val_smoothf1', 'val_l2')])
-        print(f'\r{train_summary + val_summary}')
+        if len(val_dataloader) > 0:
+
+            print(train_summary, end='', flush=True)
+
+            # Validate for a single epoch.
+            val_metrics = val_epoch(model, val_dataloader, l2_loss_weight, dilation_iterations, max_distance,
+                                    temperature, epsilon, device)
+            val_loss = val_metrics['val_loss']
+            metrics = metrics | val_metrics
+            val_summary = ' | ' + ', '.join([f'{k}={val_metrics[k]:.4f}' for k in ('val_loss', 'val_smoothf1', 'val_l2')])
+            print(f'\r{train_summary + val_summary}')
+
+        else:
+
+            print(train_summary)
+
+            val_loss = float('inf')
 
         # Update metrics log.
-        metrics_log.append({'epoch': epoch, 'lr': optimizer.param_groups[0]['lr']} | train_metrics | val_metrics)
+        metrics_log.append(metrics)
 
         # Step the learning rate scheduler.
         scheduler.step()
 
         # Save the best checkpoint if necessary.
-        best = val_metrics['val_loss'] < best_val_loss
+        best = val_loss < best_val_loss
         if best and (epoch >= decay_milestone):
-            best_val_loss = val_metrics['val_loss']
+            best_val_loss = val_loss
             checkpoint = {
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
@@ -469,7 +480,10 @@ def train_model(
             torch.save(checkpoint, last_checkpoint_path)
 
     # Save the best model.
-    state_dict = torch.load(best_checkpoint_path, map_location='cpu')['model_state_dict']
+    if best_checkpoint_path.is_file():
+        state_dict = torch.load(best_checkpoint_path, map_location='cpu')['model_state_dict']
+    else:
+        state_dict = torch.load(last_checkpoint_path, map_location='cpu')['model_state_dict']
     state_dict['metadata'] = {
         'adjustment': adjustment,
         'input_size': input_size,
