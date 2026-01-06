@@ -1,5 +1,4 @@
 import deeptile
-import jax
 import numpy as np
 import tifffile
 import torch
