@@ -146,6 +146,8 @@ class SpotsDataStream(torch.utils.data.IterableDataset):
     ----------
     dataset : torch.utils.data.Dataset
         Torch dataset.
+    batch_size : int
+        Batch size.
     epoch : int, optional
         Current epoch. Default is 1.
     seed : int, optional
@@ -159,6 +161,7 @@ class SpotsDataStream(torch.utils.data.IterableDataset):
     def __init__(
             self,
             dataset: torch.utils.data.Dataset,
+            batch_size: int,
             epoch: int = 1,
             seed: int = 0,
             shuffle: bool = True,
@@ -166,6 +169,7 @@ class SpotsDataStream(torch.utils.data.IterableDataset):
     ) -> None:
 
         self.dataset = dataset
+        self.batch_size = batch_size
         self.epoch = epoch
         self.seed = seed
         self.shuffle = shuffle
@@ -216,7 +220,7 @@ class SpotsDataStream(torch.utils.data.IterableDataset):
     def __len__(self):
 
         _, num_workers = self._get_worker_info()
-        num_samples = int(np.ceil(len(self.dataset) / num_workers))
+        num_samples = max(int(np.ceil(len(self.dataset) / num_workers)), self.batch_size)
 
         return num_samples
 
@@ -330,7 +334,7 @@ def get_torch_dataloader(
         augment_cls = partial(RandomAugment, output_size=image_size, augment=False)
         drop_last = False
 
-    datastream = SpotsDataStream(dataset, 1, seed, shuffle, augment_cls)
+    datastream = SpotsDataStream(dataset, batch_size, 1, seed, shuffle, augment_cls)
     dataloader = torch.utils.data.DataLoader(datastream, batch_size=batch_size, num_workers=num_workers,
                                              collate_fn=lambda x: list(map(list, zip(*x))), drop_last=drop_last,
                                              persistent_workers=num_workers > 0, *args, **kwargs)
