@@ -228,7 +228,7 @@ class SpotsDataStream(torch.utils.data.IterableDataset):
 
         # Get worker info.
         worker_id, num_workers = self._get_worker_info()
-        num_samples = int(np.ceil(len(self.dataset) / num_workers))
+        num_samples = max(int(np.ceil(len(self.dataset) / num_workers)), self.batch_size)
 
         # Get random seeds.
         sq = np.random.SeedSequence((self.seed, self.epoch, worker_id))
@@ -328,7 +328,7 @@ def get_torch_dataloader(
     if split == 'train':
         shuffle = True
         augment_cls = partial(RandomAugment, output_size=image_size, augment=True)
-        drop_last = True
+        drop_last = False
     else:
         shuffle = False
         augment_cls = partial(RandomAugment, output_size=image_size, augment=False)
