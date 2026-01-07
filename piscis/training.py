@@ -331,32 +331,33 @@ def train_model(
     warmup_epochs = round(warmup_fraction * epochs)
     decay_epochs = round(decay_fraction * epochs)
     decay_transition_epochs = int(np.ceil(decay_epochs / decay_transitions))
-    decay_epochs = decay_epochs + decay_transition_epochs
     decay_milestone = epochs - decay_epochs
     constant_epochs = decay_milestone - warmup_epochs
     schedulers = []
     milestones = []
-    if warmup_epochs > 0:
+    if warmup_epochs:
         linear_scheduler = torch.optim.lr_scheduler.LinearLR(
             optimizer,
             start_factor=1e-7, end_factor=1.0, total_iters=warmup_epochs
         )
         schedulers.append(linear_scheduler)
-        milestones.append(warmup_epochs)
-    if constant_epochs > 0:
+    if constant_epochs:
         constant_scheduler = torch.optim.lr_scheduler.ConstantLR(
             optimizer,
             factor=1.0, total_iters=constant_epochs
         )
         schedulers.append(constant_scheduler)
-        milestones.append(decay_milestone)
-    if decay_epochs > 0:
-        decay_scheduler = torch.optim.lr_scheduler.StepLR(
+    if decay_epochs:
+        decay_scheduler = torch.optim.lr_scheduler.LambdaLR(
             optimizer,
-            step_size=decay_transition_epochs, gamma=decay_factor
+            lambda epoch: decay_factor ** (epoch // decay_transition_epochs + 1)
         )
         schedulers.append(decay_scheduler)
-    scheduler = torch.optim.lr_scheduler.SequentialLR(optimizer, schedulers=schedulers,milestones=milestones)
+    if warmup_epochs and (constant_epochs or decay_epochs):
+        milestones.append(warmup_epochs)
+    if constant_epochs and decay_epochs:
+        milestones.append(decay_milestone)
+    scheduler = torch.optim.lr_scheduler.SequentialLR(optimizer, schedulers=schedulers, milestones=milestones)
 
     # Define directories for storing checkpoints and the model.
     CHECKPOINTS_DIR.mkdir(parents=True, exist_ok=True)
