@@ -11,7 +11,6 @@ from deeptile.extensions import stitch
 from flax import serialization
 from functools import partial
 from jax import jit
-from jax.lib import xla_bridge
 from skimage.transform import resize
 from typing import Dict, Optional, Sequence, Tuple, Union
 
@@ -63,7 +62,7 @@ class Piscis:
         """
 
         # Set the batch size to 1 if running on CPU.
-        if xla_bridge.get_backend().platform == 'cpu':
+        if jax.default_backend() == 'cpu':
             batch_size = 1
 
         # Load the model.
