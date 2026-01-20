@@ -1,471 +1,298 @@
-import jax
-import jax.numpy as jnp
 import numpy as np
-import optax
-import orbax.checkpoint as ocp
+import sys
+import torch
 
-from abc import ABC
-from flax import serialization
-from flax.training import train_state
-from functools import partial
-from jax import jit, random, value_and_grad
-from tqdm.auto import tqdm
-from typing import Any, Dict, List, Optional, Tuple
+from tqdm import tqdm
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
-from piscis.data import load_datasets, transform_batch, transform_subdataset
-from piscis.losses import (dice_loss, masked_l2_loss, smoothf1_loss, weighted_bce_loss, weighted_binary_focal_loss,
-                           wrap_loss_fn)
+from piscis.convert import convert_jax_to_torch_state_dict
+from piscis.data import get_torch_dataset, get_torch_dataloader
+from piscis.downloads import download_pretrained_model
+from piscis.losses import mean_masked_l2_loss, mean_smoothf1_loss
 from piscis.models.spots import round_input_size, SpotsModel
-from piscis.optimizers import sgdw
 from piscis.paths import CHECKPOINTS_DIR, MODELS_DIR
+from piscis.transforms import batch_voronoi_transform
 
 
-class TrainState(train_state.TrainState, ABC):
-
-    """TrainState class used to store the current state of the model during training.
-    Inherits from the train_state.TrainState class provided by Flax and adds additional attributes.
-
-    Attributes
-    ----------
-    batch_stats : Any
-        Batch statistics used for normalization.
-    key : Any
-        Random Key used for training.
-    epoch : Any
-        Current epoch number.
-    """
-
-    batch_stats: Any
-    key: Any
-    epoch: Any
-
-
-@partial(jit, static_argnums=(1, 2, 3, 4))
-def create_train_state(
-        key: jax.Array,
-        input_size: Tuple[int, int],
-        dropout_rate: float,
-        channels: int,
-        tx: optax.GradientTransformation,
-        variables: Optional[Dict] = None
-) -> TrainState:
-
-    """Create a new TrainState object.
-
-    Parameters
-    ----------
-    key : jax.Array
-        Random key used for initialization and training.
-    input_size : Tuple[int, int]
-        Size of the input images used for training.
-    dropout_rate : float
-        Dropout rate at skip connections.
-    channels : int
-        Number of image channels.
-    tx : optax.GradientTransformation
-        Optax optimizer used for training.
-    variables : Optional[Dict]
-        Model variables.
-
-    Returns
-    -------
-    state : TrainState
-        New TrainState object.
-    """
-
-    # Split the random key.
-    key, subkey = random.split(key, 2)
-
-    # Initialize the model.
-    model = SpotsModel(dropout_rate=dropout_rate)
-
-    # Initialize parameters.
-    if variables is None:
-        variables = model.init(subkey, np.ones((1, *input_size, channels)), train=False)
-
-    # Create a TrainState object.
-    state = TrainState.create(
-        apply_fn=model.apply,
-        params=variables['params'],
-        tx=tx,
-        batch_stats=variables['batch_stats'],
-        key=key,
-        epoch=jnp.array(-1, dtype=int),
-    )
-
-    return state
-
-
-def compute_training_metrics(
-        deltas_pred: jax.Array,
-        labels_pred: jax.Array,
-        batch: Dict[str, jax.Array],
-        dilation_iterations: int,
-        max_distance: float,
-        loss_weights: Dict[str, float]
-) -> Dict[str, jax.Array]:
-
-    """Compute training metrics.
-
-    Parameters
-    ----------
-    deltas_pred : jax.Array
-        Predicted displacement vectors.
-    labels_pred : jax.Array
-        Predicted binary labels.
-    batch : Dict[str, jax.Array]
-        Dictionary containing the input image and target arrays.
-    dilation_iterations : int
-        Number of iterations used to dilate ground truth labels.
-    max_distance : float
-        Maximum distance for matching predicted and ground truth displacement vectors.
-    loss_weights : Dict[str, float]
-        Weights for terms in the overall loss function.
-
-    Returns
-    -------
-    metrics : Dict[str, jax.Array]
-        Dictionary containing the values of individual loss terms and the overall loss.
-    """
-
-    # Create the metrics dictionary.
-    metrics = {}
-
-    # Compute loss terms.
-    if 'l2' in loss_weights:
-        metrics['l2'] = wrap_loss_fn(masked_l2_loss)(deltas_pred, batch['deltas'], batch['labels'][:, :, :, 0])
-    if 'bce' in loss_weights:
-        metrics['bce'] = wrap_loss_fn(weighted_bce_loss)(labels_pred, batch['labels'])
-    if 'dice' in loss_weights:
-        metrics['dice'] = wrap_loss_fn(dice_loss)(labels_pred, batch['labels'])
-    if 'focal' in loss_weights:
-        metrics['focal'] = wrap_loss_fn(weighted_binary_focal_loss)(labels_pred, batch['labels'])
-    if 'smoothf1' in loss_weights:
-        metrics['smoothf1'] = wrap_loss_fn(smoothf1_loss)(deltas_pred, labels_pred, batch['deltas'], batch['labels'],
-                                                          dilation_iterations, max_distance)
-
-    # Compute the overall loss.
-    metrics['loss'] = jnp.array(sum([loss_weights[k] * v for k, v in metrics.items()]))
-
-    return metrics
-
-
-@partial(jit, static_argnums=(4, 5, 7))
 def loss_fn(
-        params: Any,
-        state: TrainState,
-        batch: Dict[str, jax.Array],
-        key: Optional[jax.Array],
-        dilation_iterations: int,
+        labels_pred: torch.Tensor,
+        deltas_pred: torch.Tensor,
+        labels: torch.Tensor,
+        deltas: torch.Tensor,
+        p: torch.Tensor,
+        l2_loss_weight: float,
         max_distance: float,
-        loss_weights: Dict[str, float],
-        train: bool
-) -> Tuple[jax.Array, Tuple[Dict[str, jax.Array], Dict]]:
-
+        kernel_size: Sequence[int],
+        temperature: float,
+        epsilon: float
+) -> Tuple[torch.Tensor, Dict[str, float]]:
+    
     """Computes the loss and metrics for a given batch.
 
     Parameters
     ----------
-    params : Any
-        Model parameters.
-    state : TrainState
-        Current training state.
-    batch : Dict[str, jax.Array]
-        Dictionary containing the input images and target arrays.
-    key : Optional[jax.Array]
-        Random Key used for dropout.
-    dilation_iterations : int
-        Number of iterations used to dilate ground truth labels.
+    labels_pred : torch.Tensor
+        Predicted labels.
+    deltas_pred : torch.Tensor
+        Predicted displacement vectors.
+    labels: torch.Tensor
+        Ground truth labels.
+    deltas : torch.Tensor
+        Ground truth displacement vectors.
+    p : torch.Tensor
+        Number of ground truth spots in each image.
+    l2_loss_weight : float
+        Weight for the masked L2 loss term in the overall loss function.
     max_distance : float
         Maximum distance for matching predicted and ground truth displacement vectors.
-    loss_weights : Dict[str, float]
-        Weights for terms in the overall loss function.
-    train : bool
-        Whether the model is being trained.
+    kernel_size : Sequence[int], optional
+        Kernel size of sum or max pooling operations. Default is (3, 3).
+    temperature : float
+        Temperature parameter.
+    epsilon : float
+        Small constant for numerical stability.
 
     Returns
     -------
-    loss : jax.Array
+    loss : torch.Tensor
         Overall loss value.
-    aux : Tuple[Dict[str, jax.Array], Dict]
-        Auxiliary containing metrics and mutable state variables.
-    """
-
-    variables = {'params': params, 'batch_stats': state.batch_stats}
-    images = batch['images']
-
-    # Apply the model to the images, using batch_stats as a mutable variable if training.
-    if train:
-        (deltas_pred, labels_pred), mutated_vars = \
-            state.apply_fn(variables, images, train=train, rngs={'dropout': key}, mutable=['batch_stats'])
-    else:
-        deltas_pred, labels_pred = state.apply_fn(variables, images, train=train)
-        mutated_vars = None
-
-    # Compute the loss and metrics.
-    metrics = compute_training_metrics(deltas_pred, labels_pred, batch, dilation_iterations, max_distance, loss_weights)
-    loss = metrics['loss']
-    aux = (metrics, mutated_vars)
-
-    return loss, aux
-
-
-@partial(jit, static_argnums=(3, 4))
-def train_step(
-        state: TrainState,
-        batch: Dict[str, jax.Array],
-        key: Optional[jax.Array],
-        dilation_iterations: int,
-        max_distance: float,
-        loss_weights: Dict[str, float]
-) -> Tuple[TrainState, Dict[str, jax.Array]]:
-
-    """Performs a single training step.
-
-    Parameters
-    ----------
-    state : TrainState
-        Current training state.
-    batch : Dict[str, jax.Array]
-        Dictionary containing the input images and target arrays.
-    key : Optional[jax.Array]
-        Random Key used for dropout.
-    dilation_iterations : int
-        Number of iterations used to dilate ground truth labels.
-    max_distance : float
-        Maximum distance for matching predicted and ground truth displacement vectors.
-    loss_weights : Dict[str, float]
-        Weights for terms in the overall loss function.
-
-    Returns
-    -------
-    state : TrainState
-        Updated training state.
-    metrics : Dict[str, jax.Array]
+    metrics : Dict[str, float]
         Dictionary containing the values of individual loss terms and the overall loss.
     """
 
-    # Define the gradient function.
-    grad_fn = value_and_grad(loss_fn, has_aux=True)
+    # Compute SmoothF1 loss and L2 loss.
+    smoothf1 = mean_smoothf1_loss(labels_pred, deltas_pred, deltas, p,
+                                  max_distance, kernel_size, temperature, epsilon)
+    l2 = mean_masked_l2_loss(deltas_pred, deltas, labels, epsilon)
 
-    # Compute gradients and update parameters.
-    (_, (metrics, mutated_vars)), grads = grad_fn(state.params, state, batch, key,
-                                                  dilation_iterations, max_distance, loss_weights, train=True)
-    state = state.apply_gradients(grads=grads, batch_stats=mutated_vars['batch_stats'])
+    # Combine losses.
+    loss = smoothf1 + l2_loss_weight * l2
 
-    return state, metrics
+    # Create metrics dictionary.
+    metrics = {
+        'loss': loss.detach().item(),
+        'smoothf1': smoothf1.detach().item(),
+        'l2': l2.detach().item()
+    }
+
+    return loss, metrics
 
 
 def train_epoch(
-        state: TrainState,
-        dataset: Dict,
-        input_size: Tuple[int, int],
-        batch_size: int,
-        epoch_learning_rate: float,
+        model: SpotsModel,
+        dataloader: tqdm,
+        optimizer: torch.optim.Optimizer,
+        l2_loss_weight: float,
         dilation_iterations: int,
         max_distance: float,
-        loss_weights: Dict[str, float],
-        coords_max_length: int
-) -> Tuple[TrainState, List[Dict[str, float]], Dict[str, float]]:
+        temperature: float,
+        epsilon: float,
+        device: Optional[str]
+) -> Dict[str, float]:
 
     """Train the model for a single epoch.
 
     Parameters
     ----------
-    state : TrainState
-        Current train state.
-    dataset : Dict
-        Dataset dictionary.
-    input_size : Tuple[int, int]
-        Size of the input images used for training.
-    batch_size : int
-        Batch size for training.
-    epoch_learning_rate : float
-        Learning rate for the current epoch.
+    model : SpotsModel
+        Model to be trained.
+    dataloader : tqdm
+        DataLoader for the training data.
+    optimizer : torch.optim.Optimizer
+        Optimizer for updating model parameters.
+    l2_loss_weight : float
+        Weight for the masked L2 loss term in the overall loss function.
     dilation_iterations : int
-        Number of iterations to dilate ground truth labels to minimize class imbalance misclassifications due to minor
-        offsets.
+        Number of iterations to dilate ground truth labels
     max_distance : float
         Maximum distance for matching predicted and ground truth displacement vectors.
-    loss_weights : Dict[str, float]
-        Weights for terms in the overall loss function.
-    coords_max_length : int
-        Maximum length of the coordinates sequence.
+    temperature : float
+        Temperature parameter for softmax.
+    epsilon : float
+        Small constant for numerical stability.
+    device : Optional[str]
+        Device for training.
 
     Returns
     -------
-    state : TrainState
-        Updated train state.
-    batch_metrics : List[Dict[str, float]]
-        List of metrics computed for each batch.
-    epoch_metrics : Dict[str, float]
-        Dictionary of metrics computed for epoch.
+    train_metrics : Dict[str, float]
+        Dictionary containing average training metrics for the epoch.
     """
 
-    print(f'Epoch {state.epoch + 1}: ')
+    # Initialize dictionary for running metrics.
+    running_metrics = {}
 
-    # Update the learning rate.
-    state.opt_state.hyperparams['learning_rate'] = jnp.array(epoch_learning_rate, dtype=float)
+    # Set model to training mode.
+    model.train()
 
-    # Split the random key and transform the training set.
-    key = random.fold_in(state.key, state.epoch)
-    subkeys = random.split(key, 3)
-    train_ds = transform_subdataset(dataset['train'], input_size, key=subkeys[0])
-    valid_ds = dataset['valid']
+    for i, batch in enumerate(dataloader):
 
-    train_ds_size = len(train_ds['images'])
-    valid_ds_size = len(valid_ds['images'])
-    small_train_ds = train_ds_size < batch_size
-    if small_train_ds:
-        n_steps = 1
-    else:
-        n_steps = train_ds_size // batch_size
+        # Apply Voronoi transform to the batch.
+        x, y = batch
+        x = torch.tensor(np.stack(x), dtype=torch.float).to(device)
+        labels, deltas = batch_voronoi_transform(y, x.shape[-2:], dilation_iterations, device)
+        p = torch.tensor([len(coords) for coords in y], dtype=torch.float, device=device)
 
-    # Initialize the progress bar.
-    pbar = tqdm(total=n_steps)
+        # Train the model on the batch.
+        optimizer.zero_grad()
+        labels_pred, deltas_pred = model(x)
+        loss, metrics = loss_fn(labels_pred, deltas_pred, labels, deltas, p, l2_loss_weight,
+                                max_distance, model.kernel_size, temperature, epsilon)
+        loss.backward()
+        optimizer.step()
+        running_metrics = {k: running_metrics.get(k, 0.0) + metrics[k] for k in metrics}
 
-    # Shuffle the training set.
-    if small_train_ds:
-        perms = random.randint(subkeys[1], (n_steps, batch_size), 0, train_ds_size)
-    else:
-        perms = random.permutation(subkeys[1], train_ds_size)
-        perms = perms[:n_steps * batch_size]
-        perms = perms.reshape((n_steps, batch_size))
+        # Update progress bar.
+        mean_metrics = {k: v / (i + 1) for k, v in running_metrics.items()}
+        dataloader.set_postfix({k: f'{mean_metrics[k]:.4f}' for k in ('loss', 'smoothf1', 'l2')})
 
-    batch_metrics = []
-    epoch_metrics = {}
-    summary = None
-    for perm in perms:
+    train_metrics = mean_metrics
 
-        # Extract and transform the current training batch.
-        train_batch = {k: v[perm] for k, v in train_ds.items()}
-        train_batch = transform_batch(train_batch, dilation_iterations, coords_max_length)
+    return train_metrics
 
-        # Perform a training step and update metrics.
-        state, metrics = train_step(state, train_batch, subkeys[2], dilation_iterations, max_distance, loss_weights)
-        metrics = {k: float(v) for k, v in metrics.items()}
-        batch_metrics.append(metrics)
 
-        # Compute mean training metrics across each batch in epoch.
-        epoch_metrics = {
-            k: np.mean([metrics[k] for metrics in batch_metrics]).astype(float)
-            for k in batch_metrics[0]}
-        epoch_metrics['n_steps'] = n_steps
+def val_epoch(
+        model: SpotsModel,
+        dataloader: torch.utils.data.DataLoader,
+        l2_loss_weight: float,
+        dilation_iterations: int,
+        max_distance: float,
+        temperature: float,
+        epsilon: float,
+        device: Optional[str]
+) -> Dict[str, float]:
 
-        # Update the progress bar.
-        summary = (
-            f'''(train) loss: {epoch_metrics['loss']: > 6.4f}, '''
-            f'''{', '.join([f'{k}: {epoch_metrics[k]: > 6.4f}' for k in loss_weights])}'''
-        )
-        pbar.update(1)
-        pbar.set_postfix_str(summary)
+    """Validate the model for a single epoch.
 
-    if valid_ds_size:
-        val_batch_metrics = []
-        val_epoch_metrics = []
-        for i in range(valid_ds_size):
+    Parameters
+    ----------
+    model : SpotsModel
+        Model to be validated.
+    dataloader : torch.utils.data.DataLoader
+        DataLoader for the validation data.
+    l2_loss_weight : float
+        Weight for the masked L2 loss term in the overall loss function.
+    dilation_iterations : int
+        Number of iterations to dilate ground truth labels
+    max_distance : float
+        Maximum distance for matching predicted and ground truth displacement vectors.
+    temperature : float
+        Temperature parameter for softmax.
+    epsilon : float
+        Small constant for numerical stability.
+    device : Optional[str]
+        Device for training.
 
-            # Extract and transform the current validation batch.
-            val_batch = {k: v[i:i + 1] for k, v in valid_ds.items()}
-            val_batch = transform_batch(val_batch, dilation_iterations, coords_max_length)
+    Returns
+    -------
+    val_metrics : Dict[str, float]
+        Dictionary containing average validation metrics for the epoch.
+    """
 
-            # Compute and update validation metrics.
-            _, (val_metrics, _) = loss_fn(state.params, state, val_batch, None,
-                                          dilation_iterations, max_distance, loss_weights, train=False)
-            val_metrics = {f'val_{k}': float(v) for k, v in val_metrics.items()}
-            val_batch_metrics.append(val_metrics)
+    # Initialize dictionary for running metrics.
+    running_metrics = {}
 
-            # Compute mean validation metrics.
-            val_epoch_metrics = {
-                k: np.mean([metrics[k] for metrics in val_batch_metrics]).astype(float)
-                for k in val_batch_metrics[0]}
+    # Set model to eval mode.
+    model.eval()
 
-            # Update the progress bar.
-            val_summary = (
-                f'''(valid) loss: {val_epoch_metrics['val_loss']: > 6.4f}, '''
-                f'''{', '.join([f"val_{k}: {val_epoch_metrics[f'val_{k}']: > 6.4f}" for k in loss_weights])} | '''
-                f'''{summary}'''
-            )
-            pbar.set_postfix_str(val_summary)
+    with torch.no_grad():
 
-        epoch_metrics = epoch_metrics | val_epoch_metrics
+        for batch in dataloader:
 
-    pbar.close()
+            # Apply Voronoi transform to the batch.
+            x, y = batch
+            x = torch.tensor(np.stack(x), dtype=torch.float).to(device)
+            labels, deltas = batch_voronoi_transform(y, x.shape[-2:], dilation_iterations, device)
+            p = torch.tensor([len(coords) for coords in y], dtype=torch.float, device=device)
 
-    epoch_metrics['learning_rate'] = epoch_learning_rate
+            # Validate the model on the batch.
+            labels_pred, deltas_pred = model(x)
+            _, metrics = loss_fn(labels_pred, deltas_pred, labels, deltas, p, l2_loss_weight,
+                                 max_distance, model.kernel_size, temperature, epsilon)
+            running_metrics = {k: running_metrics.get(k, 0.0) + metrics[k] for k in metrics}
 
-    # Update the training state.
-    state = state.replace(epoch=state.epoch + 1)
+    val_metrics = {f'val_{k}': v / len(dataloader) for k, v in running_metrics.items()}
 
-    return state, batch_metrics, epoch_metrics
+    return val_metrics
 
 
 def train_model(
         model_name: str,
-        dataset_path: str,
+        dataset_path: Union[str, List[str], Dict[str, float]],
         initial_model_name: Optional[str] = None,
         adjustment: Optional[str] = 'standardize',
         input_size: Tuple[int, int] = (256, 256),
         random_seed: int = 0,
         batch_size: int = 4,
-        learning_rate: float = 0.2,
-        weight_decay: float = 1e-4,
-        dropout_rate: float = 0.2,
-        epochs: int = 400,
-        warmup_fraction: float = 0.05,
-        decay_fraction: float = 0.5,
+        num_workers: int = 0,
+        learning_rate: float = 0.1,
+        weight_decay: float = 1e-5,
+        epochs: int = 500,
+        warmup_fraction: float = 0.04,
+        decay_fraction: float = 0.4,
         decay_transitions: int = 10,
         decay_factor: float = 0.5,
+        l2_loss_weight: float = 0.1,
         dilation_iterations: int = 1,
         max_distance: float = 3.0,
-        loss_weights: Optional[Dict[str, float]] = None,
-        save_checkpoints: bool = True
+        temperature: float = 0.05,
+        epsilon: float = 1e-7,
+        checkpoint_every: int = 10,
+        device: Optional[str] = 'cuda'
 ) -> None:
 
     """Train a SpotsModel.
 
     Parameters
     ----------
-    model_name: str
-        Name of a new or existing model.
-    dataset_path : str
-        Path to the directory containing training and validation datasets.
+    model_name : str
+        Model name.
+    dataset_path : Union[str, List[str], Dict[str, float]]
+        Path to a dataset, path to a directory containing multiple datasets, a list of multiple dataset paths, or a
+        dictionary of multiple dataset paths and their corresponding sampling weights. If a directory of datasets or a
+        list is provided, all datasets in the directory or list will be loaded and concatenated with equal weights. If
+        a dictionary is provided, the datasets will be loaded and concatenated with the specified weights.
     initial_model_name : Optional[str], optional
         Name of an existing model to initialize the weights. Default is None.
     adjustment : Optional[str], optional
         Adjustment type applied to images. Supported types are 'normalize' and 'standardize'. Default is 'standardize'.
     input_size : Tuple[int, int], optional
-        Size of the input images used for training. Default is (256, 256).
+        Input size used for training. Default is (256, 256).
     random_seed : int, optional
         Random seed used for initialization and training. Default is 0.
     batch_size : int, optional
         Batch size for training. Default is 4.
+    num_workers : int, optional
+        Number of workers for data loading. Default is 0.
     learning_rate : float, optional
-        Learning rate for the optimizer. Default is 0.2.
+        Learning rate for the optimizer. Default is 0.1.
     weight_decay : float, optional
-        Strength of the weight decay regularization. Default is 1e-4.
-    dropout_rate : float, optional
-        Dropout rate at skip connections. Default is 0.2.
+        Strength of the weight decay regularization. Default is 1e-5.
     epochs : int, optional
-        Number of epochs to train the model for. Default is 400.
+        Number of epochs to train the model for. Default is 500.
     warmup_fraction : float, optional
-        Fraction of epochs for learning rate warmup. Default is 0.05.
+        Fraction of epochs for learning rate warmup. Default is 0.04.
     decay_fraction : float, optional
-        Fraction of epochs for learning rate decay. Default is 0.5.
+        Fraction of epochs for learning rate decay. Default is 0.4.
     decay_transitions : int, optional
         Number of times to decay the learning rate. Default is 10.
     decay_factor : float, optional
         Multiplicative factor of each learning rate decay transition. Default is 0.5.
+    l2_loss_weight : float, optional
+        Weight for the masked L2 loss term in the overall loss function. Default is 0.1.
     dilation_iterations : int, optional
         Number of iterations to dilate ground truth labels to minimize class imbalance and misclassifications due to
         minor offsets. Default is 1.
     max_distance : float, optional
         Maximum distance for matching predicted and ground truth displacement vectors. Default is 3.0.
-    loss_weights : Optional[Dict[str, float]], optional
-        Weights for terms in the overall loss function. Supported terms are 'l2', 'bce', 'focal', 'dice', and
-        'smoothf1'. If None, the loss weights {'l2': 0.25, 'smoothf1': 1.0} will be used. Default is None.
-    save_checkpoints : bool, optional
-        Whether to save checkpoints during training. Default is True.
+    temperature : float, optional
+        Temperature parameter for softmax. Default is 0.05.
+    epsilon : float, optional
+        Small constant for numerical stability. Default is 1e-7.
+    checkpoint_every : int, optional
+        Number of epochs between saving model checkpoints. Default is 10.
+    device : Optional[str], optional
+        Device for training. Default is 'cuda'.
 
     Raises
     ------
@@ -475,138 +302,193 @@ def train_model(
 
     if warmup_fraction + decay_fraction > 1:
         raise ValueError("warmup_fraction + decay_fraction cannot be greater 1.")
+    
+    # Split random seed.
+    sq = np.random.SeedSequence(random_seed)
+    child_seeds = sq.generate_state(4, dtype=np.uint32)
 
-    # Load datasets.
-    print('Loading datasets...')
-    dataset = load_datasets(dataset_path, adjustment, load_train=True, load_valid=True, load_test=False)
-    for k, v in dataset.items():
-        for i in range(len(v['images'])):
-            if v['images'][i].ndim == 2:
-                v['images'][i] = v['images'][i][:, :, None]
-            else:
-                v['images'][i] = np.moveaxis(v['images'][i], 0, -1)
-    if len(dataset['valid']['images']):
-        dataset['valid'] = transform_subdataset(dataset['valid'], input_size)
-    coords_max_length = max([len(coords) for coords in dataset['train']['coords']] +
-                            [len(coords) for coords in dataset['valid']['coords']])
-    channels = max(image.shape[-1] for image in dataset['train']['images'])
-
-    # Round the input size.
+    # Round the input image size.
     input_size = round_input_size(input_size)
 
-    # Create the random key.
-    key = random.PRNGKey(random_seed)
+    # Get dataloaders.
+    dataset = get_torch_dataset(dataset_path, adjustment, load_train=True, load_val=True, load_test=False)
+    train_dataloader = get_torch_dataloader(dataset['train'], image_size=input_size, batch_size=batch_size,
+                                            num_workers=num_workers, seed=int(child_seeds[0]))
+    val_dataloader = get_torch_dataloader(dataset['val'], image_size=input_size, batch_size=batch_size,
+                                          num_workers=num_workers, seed=int(child_seeds[1]))
+    channels = next(iter(train_dataloader))[0][0].shape[0]
+
+    # Create the model.
+    torch.manual_seed(child_seeds[2])
+    kernel_size = (2 * dilation_iterations + 1, ) * 2
+    model = SpotsModel(in_channels=channels, pooling='max', kernel_size=kernel_size).to(device)
+
+    # Create the optimizer.
+    optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9,
+                                weight_decay=weight_decay, nesterov=True)
 
     # Create the learning rate schedule.
     warmup_epochs = round(warmup_fraction * epochs)
     decay_epochs = round(decay_fraction * epochs)
-    decay_transition_epochs = np.ceil(decay_epochs / decay_transitions).astype(int)
-    warmup = [learning_rate * i / warmup_epochs for i in range(warmup_epochs)]
-    constant = [learning_rate] * (epochs - warmup_epochs - decay_epochs)
-    decay = [learning_rate * decay_factor ** np.ceil(i / decay_transition_epochs) for i in range(1, decay_epochs + 1)]
-    learning_rate_schedule = warmup + constant + decay
-
-    # Create the optimizer.
-    optimizer = partial(sgdw, momentum=0.9, nesterov=True, weight_decay=weight_decay)
-    tx = optax.inject_hyperparams(optimizer)(learning_rate=learning_rate)
-
-    # Default loss weights.
-    if loss_weights is None:
-        loss_weights = {'l2': 0.25, 'smoothf1': 1.0}
+    decay_transition_epochs = int(np.ceil(decay_epochs / decay_transitions))
+    decay_milestone = epochs - decay_epochs
+    constant_epochs = decay_milestone - warmup_epochs
+    schedulers = []
+    milestones = []
+    if warmup_epochs:
+        linear_scheduler = torch.optim.lr_scheduler.LinearLR(
+            optimizer,
+            start_factor=1e-7, end_factor=1.0, total_iters=warmup_epochs
+        )
+        schedulers.append(linear_scheduler)
+    if constant_epochs:
+        constant_scheduler = torch.optim.lr_scheduler.ConstantLR(
+            optimizer,
+            factor=1.0, total_iters=constant_epochs
+        )
+        schedulers.append(constant_scheduler)
+    if decay_epochs:
+        decay_scheduler = torch.optim.lr_scheduler.LambdaLR(
+            optimizer,
+            lambda epoch: decay_factor ** (epoch // decay_transition_epochs + 1)
+        )
+        schedulers.append(decay_scheduler)
+    if warmup_epochs and (constant_epochs or decay_epochs):
+        milestones.append(warmup_epochs)
+    if constant_epochs and decay_epochs:
+        milestones.append(decay_milestone)
+    scheduler = torch.optim.lr_scheduler.SequentialLR(optimizer, schedulers=schedulers, milestones=milestones)
 
     # Define directories for storing checkpoints and the model.
-    checkpoint_path = CHECKPOINTS_DIR / model_name
-    model_path = MODELS_DIR / model_name
+    CHECKPOINTS_DIR.mkdir(parents=True, exist_ok=True)
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    last_checkpoint_path = CHECKPOINTS_DIR / f'{model_name}_last.pt'
+    best_checkpoint_path = CHECKPOINTS_DIR / f'{model_name}_best.pt'
 
-    # Create a checkpoint manager.
-    mgr_options = ocp.CheckpointManagerOptions(max_to_keep=2)
-    checkpoint_path.mkdir(parents=True, exist_ok=True)
-    ckpt_mgr = ocp.CheckpointManager(
-        directory=checkpoint_path,
-        item_names=('state', 'batch_metrics_log', 'epoch_metrics_log'),
-        options=mgr_options
-    )
+    model_path = MODELS_DIR / f'{model_name}.pt'
 
-    # Initialize model weights.
-    if initial_model_name:
-        initial_model_path = MODELS_DIR / initial_model_name
-        if initial_model_path.is_file():
+    if last_checkpoint_path.is_file():
+
+        # Load the last checkpoint if available.
+        print(f'Loading the last checkpoint from {last_checkpoint_path}...')
+        checkpoint = torch.load(last_checkpoint_path, map_location='cpu')
+        last_epoch = checkpoint['epoch']
+        train_dataloader.dataset.set_epoch(last_epoch + 1)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        metrics_log = checkpoint['metrics_log']
+        best_val_loss = min(metrics.get('val_loss', float('inf')) for metrics in metrics_log)
+
+    else:
+
+        last_epoch = 0
+
+        # Initialize model weights.
+        if initial_model_name:
+            initial_model_path = MODELS_DIR / f'{initial_model_name}.pt'
+            if not initial_model_path.is_file():
+                if (MODELS_DIR / initial_model_name).is_file():
+                    state_dict = convert_jax_to_torch_state_dict(initial_model_name)
+                    torch.save(state_dict, initial_model_path)
+                else:
+                    download_pretrained_model(initial_model_name)
             print(f'Initializing model weights from {initial_model_path}...')
             with open(initial_model_path, 'rb') as f_model:
-                variables = serialization.from_bytes(target=None, encoded_bytes=f_model.read())['variables']
-                params = variables['params']
-                module_name = list(params.keys())[0]
-                submodule_name = [name for name in list(params[module_name].keys())
-                                  if not (name.startswith('Conv') or name.startswith('Decoder'))][0]
-                first_layer = params[module_name][submodule_name]['stem_conv']
-                first_layer['kernel'] = np.pad(
-                    first_layer['kernel'][:, :, :1], ((0, 0), (0, 0), (0, channels - 1), (0, 0))
-                )
+                state_dict = torch.load(f_model, map_location='cpu')
+                state_dict.pop('metadata')
+                first_layer = state_dict['fpn.encoder.stem.conv.0.weight']
+                if (first_layer.shape[1] == 1) and (channels > 1):
+                    state_dict['fpn.encoder.stem.conv.0.weight'] = torch.cat([first_layer] * channels, dim=1)
+                if first_layer.shape[1] > channels:
+                    state_dict['fpn.encoder.stem.conv.0.weight'] = first_layer[:, :channels, :, :]
+                model.load_state_dict(state_dict)
+
+        # Create list for storing metrics.
+        metrics_log = []
+        best_val_loss = float('inf')
+
+    # Determine epoch string length.
+    epoch_str_len = len(str(epochs))
+
+    # Train the model.
+    for epoch in range(last_epoch + 1, epochs + 1):
+
+        # Create progress bar.
+        pbar_desc = f'Epoch {epoch:0{epoch_str_len}}'
+        pbar = tqdm(
+            train_dataloader,
+            desc=pbar_desc,
+            leave=False,
+            file=sys.stdout
+        )
+
+        # Train for a single epoch.
+        train_metrics = train_epoch(model, pbar, optimizer, l2_loss_weight, dilation_iterations, max_distance,
+                                    temperature, epsilon, device)
+        metrics = {'epoch': epoch, 'lr': optimizer.param_groups[0]['lr']} | train_metrics
+        train_summary = f'{pbar_desc}: ' + \
+                        ', '.join([f'{k}={train_metrics[k]:.4f}' for k in ('loss', 'smoothf1', 'l2')])
+
+        if len(val_dataloader) > 0:
+
+            print(train_summary, end='', flush=True)
+
+            # Validate for a single epoch.
+            val_metrics = val_epoch(model, val_dataloader, l2_loss_weight, dilation_iterations, max_distance,
+                                    temperature, epsilon, device)
+            val_loss = val_metrics['val_loss']
+            metrics = metrics | val_metrics
+            val_summary = ' | ' + ', '.join([f'{k}={val_metrics[k]:.4f}' for k in ('val_loss', 'val_smoothf1', 'val_l2')])
+            print(f'\r{train_summary + val_summary}')
+
         else:
-            variables = None
-    else:
-        variables = None
 
-    # Create the training state.
-    print('Creating TrainState...')
-    state = create_train_state(key, input_size, dropout_rate, channels, tx, variables)
+            print(train_summary)
 
-    # Create lists for storing batch and epoch metrics.
-    batch_metrics_log = []
-    epoch_metrics_log = []
+            val_loss = float('inf')
 
-    # Load the latest checkpoint.
-    if initial_model_name is None:
-        latest_step = ckpt_mgr.latest_step()
-        if latest_step is not None:
-            print(f'Loading latest checkpoint from {checkpoint_path}...')
-            checkpoint = ckpt_mgr.restore(
-                step=latest_step,
-                args=ocp.args.Composite(
-                    state=ocp.args.StandardRestore(state),
-                    batch_metrics_log=ocp.args.JsonRestore(),
-                    epoch_metrics_log=ocp.args.JsonRestore()
-                )
-            )
-            state = checkpoint['state']
-            batch_metrics_log = checkpoint['batch_metrics_log']
-            epoch_metrics_log = checkpoint['epoch_metrics_log']
+        # Update metrics log.
+        metrics_log.append(metrics)
 
-    for epoch_learning_rate in learning_rate_schedule:
+        # Step the learning rate scheduler.
+        scheduler.step()
 
-        # Train the model for a single epoch.
-        state, batch_metrics, epoch_metrics = \
-            train_epoch(state, dataset, input_size, batch_size, epoch_learning_rate,
-                        dilation_iterations, max_distance, loss_weights, coords_max_length)
-
-        # Update batch metrics and epoch metrics logs.
-        batch_metrics_log += batch_metrics
-        epoch_metrics_log += [epoch_metrics]
-
+        # Save the best checkpoint if necessary.
+        best = val_loss < best_val_loss
+        if best and (epoch >= decay_milestone):
+            best_val_loss = val_loss
+            checkpoint = {
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict(),
+                'metrics_log': metrics_log,
+                'best_val_loss': best_val_loss
+            }
+            torch.save(checkpoint, best_checkpoint_path)
+        
         # Save a checkpoint if necessary.
-        if save_checkpoints:
-            ckpt_mgr.save(
-                step=state.epoch,
-                args=ocp.args.Composite(
-                    state=ocp.args.StandardSave(state),
-                    batch_metrics_log=ocp.args.JsonSave(batch_metrics_log),
-                    epoch_metrics_log=ocp.args.JsonSave(epoch_metrics_log)
-                )
-            )
-            ckpt_mgr.wait_until_finished()
+        if best or (epoch == epochs) or (epoch % checkpoint_every == 0):
+            checkpoint = {
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict(),
+                'metrics_log': metrics_log,
+                'best_val_loss': best_val_loss
+            }
+            torch.save(checkpoint, last_checkpoint_path)
 
-    # Save the model.
-    model_dict = {
-        'variables': {
-            'params': state.params,
-            'batch_stats': state.batch_stats
-        },
+    # Save the best model.
+    if best_checkpoint_path.is_file():
+        state_dict = torch.load(best_checkpoint_path, map_location='cpu')['model_state_dict']
+    else:
+        state_dict = torch.load(last_checkpoint_path, map_location='cpu')['model_state_dict']
+    state_dict['metadata'] = {
         'adjustment': adjustment,
         'input_size': input_size,
         'dilation_iterations': dilation_iterations,
         'channels': channels
     }
-    bytes_model = serialization.to_bytes(model_dict)
-    MODELS_DIR.mkdir(parents=True, exist_ok=True)
-    with open(model_path, 'wb') as f_model:
-        f_model.write(bytes_model)
+    torch.save(state_dict, model_path)

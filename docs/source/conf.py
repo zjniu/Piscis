@@ -1,5 +1,5 @@
 project = 'Piscis'
-copyright = '2023-2024, William Niu'
+copyright = '2023-2026, William Niu'
 author = 'William Niu'
 
 extensions = [
@@ -10,10 +10,9 @@ extensions = [
 ]
 intersphinx_mapping = {
     'python': ('https://docs.python.org/3', None),
-    'flax': ('https://flax.readthedocs.io/en/latest/', None),
-    'jax': ('https://jax.readthedocs.io/en/latest/', None),
     'numpy': ('https://numpy.org/doc/stable/', None),
     'pandas': ('https://pandas.pydata.org/docs/', None),
+    'torch': ('https://pytorch.org/docs/stable', None),
     'xarray': ('https://xarray.pydata.org/en/stable/', None),
 }
 autoapi_dirs = ['../../piscis']

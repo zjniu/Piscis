@@ -23,13 +23,13 @@ The ``predict`` command is used to detect spots in an image or a folder of image
 **Options:**
   -h, --help            show this help message and exit
   --model-name MODEL_NAME
-                        Model name. (default: 20230905)
+                        Model name. (default: 20251212)
   --batch-size BATCH_SIZE
-                        Batch size for the CNN. (default: 4)
+                        Batch size for the CNN. (default: 1)
   --stack               Whether the input is a stack of images. (default: False)
   --scale SCALE         Scale factor for rescaling the input. (default: 1.0)
   --threshold THRESHOLD
-                        Spot detection threshold. Can be interpreted as the minimum number of fully confident pixels necessary to identify a spot. (default: 1.0)
+                        Spot detection threshold. (default: 0.5)
   --min-distance MIN_DISTANCE
                         Minimum distance between spots. (default: 1)
 
@@ -37,9 +37,9 @@ The ``predict`` command is used to detect spots in an image or a folder of image
 
 .. code-block:: bash
 
-    piscis predict ./images ./predictions --model-name 20230905
+    piscis predict ./images ./predictions --model-name 20251212
 
-This command processes all images in the ``./images`` folder using the ``20230905`` model and saves results in the ``./predictions`` folder.
+This command processes all images in the ``./images`` folder using the ``20251212`` model and saves results in the ``./predictions`` folder.
 
 Train Command
 -------------
@@ -54,9 +54,9 @@ The ``train`` command is used to train a new Piscis model or fine-tune an existi
 
 **Positional Arguments:**
   ``model_name``
-    Name of a new or existing model.
+    Model name.
   ``dataset_path``
-    Path to the directory containing training and validation datasets.
+    Path to a dataset or path to a directory containing multiple datasets.
 
 **Options:**
   -h, --help            show this help message and exit
@@ -64,23 +64,25 @@ The ``train`` command is used to train a new Piscis model or fine-tune an existi
                         Name of an existing model to initialize the weights. (default: None)
   --adjustment ADJUSTMENT
                         Adjustment type applied to images. Supported types are 'normalize' and 'standardize'. (default: standardize)
-  --input-size INPUT_SIZE
-                        Size of the input images used for training. (default: (256, 256))
+  --input-size INPUT_SIZE INPUT_SIZE
+                        Input size used for training. (default: (256, 256))
   --random-seed RANDOM_SEED
                         Random seed used for initialization and training. (default: 0)
   --batch-size BATCH_SIZE
                         Batch size for training. (default: 4)
+  --num-workers NUM_WORKERS
+                        Number of workers for data loading. (default: 0)
   --learning-rate LEARNING_RATE
-                        Learning rate for the optimizer. (default: 0.2)
+                        Learning rate for the optimizer. (default: 0.1)
   --weight-decay WEIGHT_DECAY
-                        Strength of the weight decay regularization. (default: 0.0001)
-  --dropout-rate DROPOUT_RATE
-                        Dropout rate at skip connections. (default: 0.2)
-  --epochs EPOCHS       Number of epochs to train the model for. (default: 400)
+                        Strength of the weight decay regularization. (default: 1e-05)
+  --epochs EPOCHS       Number of epochs to train the model for. (default: 500)
   --warmup-fraction WARMUP_FRACTION
-                        Fraction of epochs for learning rate warmup. (default: 0.05)
+                        Fraction of epochs for learning rate warmup. (default: 0.04)
   --decay-fraction DECAY_FRACTION
-                        Fraction of epochs for learning rate decay. (default: 0.5)
+                        Fraction of epochs for learning rate decay. (default: 0.4)
+  --l2-loss-weight L2_LOSS_WEIGHT
+                        Weight for the masked L2 loss term in the overall loss function. (default: 0.1)
   --decay-transitions DECAY_TRANSITIONS
                         Number of times to decay the learning rate. (default: 10)
   --decay-factor DECAY_FACTOR
@@ -89,23 +91,17 @@ The ``train`` command is used to train a new Piscis model or fine-tune an existi
                         Number of iterations to dilate ground truth labels to minimize class imbalance and misclassifications due to minor offsets. (default: 1)
   --max-distance MAX_DISTANCE
                         Maximum distance for matching predicted and ground truth displacement vectors. (default: 3.0)
-  --l2-loss-weight L2_LOSS_WEIGHT
-                        Weight for the L2 loss term. (default: 0.25)
-  --bce-loss-weight BCE_LOSS_WEIGHT
-                        Weight for the bce loss term. (default: 0.0)
-  --dice-loss-weight DICE_LOSS_WEIGHT
-                        Weight for the dice loss term. (default: 0.0)
-  --focal-loss-weight FOCAL_LOSS_WEIGHT
-                        Weight for the focal loss term. (default: 0.0)
-  --smoothf1-loss-weight SMOOTHF1_LOSS_WEIGHT
-                        Weight for the smoothf1 loss term. (default: 1.0)
-  --save-checkpoints, --no-save-checkpoints
-                        Save checkpoints during training. (default: True)
+  --temperature TEMPERATURE
+                        Temperature parameter for softmax. (default: 0.05)
+  --epsilon EPSILON     Small constant for numerical stability. (default: 1e-07)
+  --checkpoint_every CHECKPOINT_EVERY
+                        Number of epochs between saving model checkpoints. (default: 10)
+  --device DEVICE       Device for training. (default: cuda)
 
 **Example:**
 
 .. code-block:: bash
 
-    piscis train new_model ./dataset.npz
+    piscis train new_model ./dataset
 
-This command trains a model named ``new_model`` using the dataset in ``./dataset.npz`` and default training parameters.
+This command trains a model named ``new_model`` using the dataset in ``./dataset`` and default training parameters.

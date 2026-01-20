@@ -1,11 +1,9 @@
 import cv2 as cv
-import jax
-import jax.numpy as jnp
 import numpy as np
+import torch
 
-from jax import jit, random, vmap
 from scipy import ndimage
-from typing import Any, List, Optional, Sequence, Tuple
+from typing import Any, Optional, Sequence, Tuple
 
 
 class RandomAugment:
@@ -14,8 +12,14 @@ class RandomAugment:
 
     Attributes
     ----------
+    rng : np.random.Generator
+        Random number generator used for generating random transformations.
     output_size : Optional[Tuple[int, int]]
-        Output size of the transformer.
+        Output size.
+    flips0 : List[bool]
+        List of booleans for flipping along axis 0.
+    flips1 : List[bool]
+        List of booleans for flipping along axis 1.
     scales : List[float]
         List of image scales.
     dxys : List[Tuple[float, float]]
@@ -24,214 +28,145 @@ class RandomAugment:
         List of image rotation angles.
     affines : List[np.ndarray]
         List of affine transformation matrices.
-    flips0 : List[bool]
-        List of booleans for flipping along axis 0.
-    flips1 : List[bool]
-        List of booleans for flipping along axis 1.
+    intensity_shifts : List[float]
+        List of image intensity shift values.
     intensity_scales : List[float]
         List of image intensity scale factors.
     """
 
-    def __init__(self) -> None:
-
-        """Initialize a RandomAugment object."""
-
-        self.output_size = None
-        self.scales = []
-        self.dxys = []
-        self.thetas = []
-        self.affines = []
-        self.flips0 = []
-        self.flips1 = []
-        self.intensity_scales = []
-
-    def generate_transforms(
+    def __init__(
             self,
-            images: Sequence[np.ndarray],
-            key: jax.Array,
-            base_scales: Sequence[float],
+            seed: int,
             output_size: Tuple[int, int],
-            min_scale_factor: float = 0.75,
-            max_scale_factor: float = 1.25,
-            max_intensity_scale_factor: float = 5
+            augment: bool = True
     ) -> None:
 
-        """Generate random transformations.
+        """Initialize a RandomAugment object.
+        
+        Parameters
+        ----------
+        seed : int
+            Random seed used for generating random transformations.
+        output_size : Tuple[int, int]
+            Output size.
+        augment : bool, optional
+            Whether to apply random augmentations. Default is True.
+        """
+
+        self.rng = np.random.default_rng(seed)
+        self.output_size = output_size
+        self.augment = augment
+
+    def apply(
+            self,
+            image: np.ndarray,
+            coords: np.ndarray,
+            filter_coords: bool = True,
+            min_scale_factor: float = 0.75,
+            max_scale_factor: float = 1.25,
+            max_intensity_shift: float = 0.1,
+            max_intensity_scale_factor: float = 5
+    ) -> Tuple[np.ndarray, np.ndarray]:
+
+        """Apply random transformations to an image and its corresponding coordinates.
 
         Parameters
         ----------
-        images : Sequence[np.ndarray]
+        images : np.ndarray
             Images to transform.
-        key : jax.Array
-            Random key used for generating random transformations.
-        base_scales : Sequence[float]
-            List of base scales for each image.
-        output_size : Tuple[int, int]
-            Output size of the transformer.
+        coords : np.ndarray
+            Coordinates to transform.
+        filter_coords : bool, optional
+            Whether to filter coordinates outside the transformed image. Default is True.
         min_scale_factor : float, optional
             Minimum scale factor. Default is 0.75.
         max_scale_factor : float, optional
             Maximum scale factor. Default is 1.25.
+        max_intensity_shift : float, optional
+            Maximum intensity shift. Intensity shifts are sampled from a uniform distribution with support on the
+            interval [-`max_intensity_shift`, `max_intensity_shift`]. Default is 0.1.
         max_intensity_scale_factor : float, optional
             Maximum intensity scale factor. Intensity scale factors are sampled from a log-uniform distribution with
             support on the interval [1 / `max_intensity_scale_factor`, `max_intensity_scale_factor`]. Default is 5.
-        """
-
-        # Reset class attributes.
-        self.output_size = output_size
-        self.flips0 = []
-        self.flips1 = []
-        self.scales = []
-        self.dxys = []
-        self.thetas = []
-        self.affines = []
-        self.intensity_scales = []
-
-        # Determine the number of channels.
-        if images[0].ndim == 2:
-            channels = 1
-        elif images[0].ndim == 3:
-            channels = images[0].shape[-1]
-
-        for image, base_scale in zip(images, base_scales):
-
-            # Random flips.
-            key, *subkeys = random.split(key, 3)
-            flip0 = random.uniform(subkeys[0]) > 0.5
-            self.flips0.append(float(flip0))
-            flip1 = random.uniform(subkeys[1]) > 0.5
-            self.flips1.append(float(flip1))
-
-            # Random scaling.
-            key, subkey = random.split(key)
-            scale = base_scale * (min_scale_factor + (max_scale_factor - min_scale_factor) * random.uniform(subkey))
-            self.scales.append(float(scale))
-
-            # Random translation.
-            key, subkey = random.split(key)
-            dxy = np.maximum(0, np.array([image.shape[1] * scale - output_size[1],
-                                          image.shape[0] * scale - output_size[0]]))
-            dxy = (random.uniform(subkey, (2, )) - 0.5) * dxy
-            self.dxys.append(np.asarray(dxy))
-
-            # Random rotation.
-            key, subkey = random.split(key)
-            theta = random.uniform(subkey) * 2 * np.pi
-            self.thetas.append(float(theta))
-
-            # Construct affine transformation.
-            image_center = (image.shape[1] / 2, image.shape[0] / 2)
-            affine = cv.getRotationMatrix2D(image_center, float(theta * 180 / np.pi), float(scale))
-            affine[:, 2] += np.array(output_size) / 2 - np.array(image_center) + dxy
-            self.affines.append(affine)
-
-            # Random intensity scaling.
-            key, subkey = random.split(key)
-            intensity_scale = np.exp(
-                (random.uniform(subkey, shape=(1, 1, channels)) - 0.5) * 2 * np.log(max_intensity_scale_factor)
-            )
-            self.intensity_scales.append(intensity_scale)
-
-    def apply_coord_transforms(
-            self,
-            coords: Sequence[np.ndarray],
-            filter_coords: bool = True
-    ) -> List[np.ndarray]:
-
-        """Apply random transformations to coordinates.
-
-        Parameters
-        ----------
-        coords : Sequence[np.ndarray]
-            Coordinates to transform.
-        filter_coords : bool, optional
-            Whether to filter coordinates outside the transformed image. Default is True.
-
+        
         Returns
         -------
-        transformed_coords : List[np.ndarray]
+        image : np.ndarray
+            Transformed image.
+        coords : np.ndarray
             Transformed coordinates.
         """
 
-        transformed_coords = []
+        # Determine the number of channels.
+        if image.ndim == 2:
+            channels = 1
+        elif image.ndim == 3:
+            channels = image.shape[0]
+            image = np.moveaxis(image, 0, -1)
 
-        for coord, flip0, flip1, affine in zip(coords, self.flips0, self.flips1, self.affines):
+        # Random affine transformation.
+        if self.augment:
+            do_affine = self.rng.uniform() > 0.5
+        else:
+            do_affine = False
 
-            # Apply affine transformation
-            coord = np.concatenate((np.flip(coord, axis=1), np.ones((len(coord), 1))), axis=1)
-            transformed_coord = np.flip((coord @ affine.T), axis=1)
+        if do_affine:
 
-            # Random flip
-            if flip0:
-                transformed_coord[:, 0] = self.output_size[0] - 1 - transformed_coord[:, 0]
-            if flip1:
-                transformed_coord[:, 1] = self.output_size[1] - 1 - transformed_coord[:, 1]
+            # Random scaling.
+            scale = self.rng.uniform(min_scale_factor, max_scale_factor)
 
-            # Filter coordinates outside transformed image
-            if filter_coords:
-                transformed_coord = transformed_coord[np.all((transformed_coord > -0.5) &
-                                                             (transformed_coord < np.array(self.output_size) - 0.5),
-                                                             axis=1)]
+            # Random translation.
+            dxy = np.maximum(0, np.array([image.shape[1] * scale - self.output_size[1],
+                                          image.shape[0] * scale - self.output_size[0]]))
+            dxy = self.rng.uniform(-dxy / 2, dxy / 2, size=2)
 
-            transformed_coords.append(transformed_coord)
+            # Random rotation.
+            theta = 2 * np.pi * self.rng.uniform()
 
-        return transformed_coords
+        else:
 
-    def apply_image_transforms(
-            self,
-            images: Sequence[np.ndarray],
-            interpolation: str = 'nearest'
-    ) -> List[np.ndarray]:
+            scale = 1
+            dxy = np.array([0, 0])
+            theta = self.rng.choice((0, np.pi / 2, np.pi, 3 * np.pi / 2))
 
-        """Apply random transformations to images.
+        image_center = (image.shape[1] / 2, image.shape[0] / 2)
+        affine = cv.getRotationMatrix2D(image_center, float(theta * 180 / np.pi), float(scale))
+        affine[:, 2] += np.array(self.output_size) / 2 - np.array(image_center) + dxy
+        image = cv.warpAffine(image, M=affine, dsize=self.output_size, flags=cv.INTER_LINEAR)
+        coords = np.concatenate((np.flip(coords, axis=1), np.ones((len(coords), 1))), axis=1)
+        coords = np.flip((coords @ affine.T), axis=1)
 
-        Parameters
-        ----------
-        images : Sequence[np.ndarray]
-            Images to transform.
-        interpolation : str, optional
-            Interpolation mode for image scaling. Supported modes are 'nearest' or 'bilinear'. Default is 'nearest'.
+        # Add or move channels axis if necessary.
+        if image.ndim == 2:
+            image = image[None]
+        elif image.ndim == 3:
+            image = np.moveaxis(image, -1, 0)
 
-        Returns
-        -------
-        transformed_images : List[np.ndarray]
-            Transformed images.
+        if self.augment:
 
-        Raises
-        ------
-        ValueError
-            If the `interpolation` mode is not supported.
-        """
-
-        transformed_images = []
-
-        for image, affine, flip0, flip1, intensity_scale in \
-                zip(images, self.affines, self.flips0, self.flips1, self.intensity_scales):
-
-            # Apply affine transformation
-            if interpolation == 'nearest':
-                image = cv.warpAffine(image, M=affine, dsize=self.output_size, flags=cv.INTER_NEAREST)
-            elif interpolation == 'bilinear':
-                image = cv.warpAffine(image, M=affine, dsize=self.output_size, flags=cv.INTER_LINEAR)
-            else:
-                raise ValueError("Interpolation mode is not supported.")
-
-            # Add channel axis if necessary.
-            if image.ndim == 2:
-                image = image[:, :, None]
-
-            # Random flip
-            if flip0:
-                image = np.flip(image, axis=0)
-            if flip1:
+            # Random flips.
+            if self.rng.uniform() > 0.5:
                 image = np.flip(image, axis=1)
+                coords[:, 0] = self.output_size[0] - 1 - coords[:, 0]
+            if self.rng.uniform() > 0.5:
+                image = np.flip(image, axis=2)
+                coords[:, 1] = self.output_size[1] - 1 - coords[:, 1]
 
-            # Random intensity scaling
-            image = image * intensity_scale
+            # Random intensity shift and scaling.
+            if self.rng.uniform() > 0.5:
+                intensity_shift = self.rng.uniform(-max_intensity_shift, max_intensity_shift, size=(channels, 1, 1))
+                log_max_intensity_scale_factor = np.log(max_intensity_scale_factor)
+                intensity_scale = np.exp(
+                    self.rng.uniform(-log_max_intensity_scale_factor,
+                                    log_max_intensity_scale_factor, size=(channels, 1, 1))
+                )
+                image = intensity_shift + intensity_scale * image
 
-            transformed_images.append(image)
+        # Filter coordinates outside transformed image
+        if filter_coords:
+            coords = coords[np.all((coords > -0.5) & (coords < np.array(self.output_size) - 0.5), axis=1)]
 
-        return transformed_images
+        return image, coords
 
 
 def batch_adjust(
@@ -257,13 +192,13 @@ def batch_adjust(
         Adjusted images.
     """
 
+    adjusted_images = np.empty(len(images), dtype=object)
+
     if adjustment is not None:
-        images = list(images)
-        adjusted_images = np.empty(len(images), dtype=object)
         for i, image in enumerate(images):
             adjusted_images[i] = adjust(image, adjustment, **kwargs)
     else:
-        adjusted_images = images
+        adjusted_images[:] = images
 
     return adjusted_images
 
@@ -368,117 +303,126 @@ def standardize(
     return standardized_image
 
 
-def voronoi_transform(
+def batch_voronoi_transform(
         coords: Sequence[np.ndarray],
         output_size: Tuple[int, int] = (256, 256),
         dilation_iterations: int = 1,
-        coords_pad_length: Optional[int] = None
-) -> Tuple[np.ndarray, np.ndarray]:
-
-    """Transform a list of coordinates to generate ground truth binary labels and displacement vectors from each pixel
-    to the nearest point via a Voronoi tessellation. Adapted from DeepCell Spots.
+        device: Optional[str] = None
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    
+    """Batch Voronoi transform.
 
     Parameters
     ----------
     coords : Sequence[np.ndarray]
         List of coordinates.
     output_size : Tuple[int, int], optional
-        Size of output arrays. Default is (256, 256).
+        Output size. Default is (256, 256).
     dilation_iterations : int, optional
         Number of iterations to dilate ground truth labels. Default is 1.
-    coords_pad_length : Optional[int], optional
-        Padded length of the coordinates sequence. Default is None.
+    device : Optional[str], optional
+        Desired device of returned tensors. Default is None.
 
     Returns
     -------
-    deltas : jax.Array
-        Array where each pixel is a vector to the nearest point in `coords`.
-    labels : jax.Array
-        Array where each pixel is a boolean for whether it contains a point in `coords`.
+    labels : torch.Tensor
+        Tensor where each pixel is a boolean for whether it contains a point in `coords`.
+    deltas : torch.Tensor
+        Tensor where each pixel is a vector to the nearest point in `coords`.
+    """
+
+    # Initialize lists for labels and deltas.
+    labels = []
+    deltas = []
+
+    # Generate index map.
+    ii, jj = torch.meshgrid(
+            torch.arange(output_size[0], dtype=torch.float, device=device),
+            torch.arange(output_size[1], dtype=torch.float, device=device),
+            indexing='ij'
+        )
+    index_map = torch.stack((ii, jj), dim=-1).view(1, -1, 2)
+
+    # Apply the Voronoi transform.
+    for c in coords:
+        batch_labels, batch_deltas = voronoi_transform(c, output_size, dilation_iterations, device, index_map)
+        labels.append(batch_labels)
+        deltas.append(batch_deltas)
+
+    # Stack the labels and deltas.
+    labels = torch.stack(labels, dim=0)
+    deltas = torch.stack(deltas, dim=0)
+
+    return labels, deltas
+
+
+def voronoi_transform(
+        coords: np.ndarray,
+        output_size: Tuple[int, int] = (256, 256),
+        dilation_iterations: int = 1,
+        device: Optional[str] = None,
+        index_map: Optional[torch.Tensor] = None
+) -> Tuple[torch.Tensor, torch.Tensor]:
+
+    """Transform a list of coordinates to generate ground truth binary labels and displacement vectors from each pixel
+    to the nearest point via a Voronoi tessellation. Adapted from DeepCell Spots.
+
+    Parameters
+    ----------
+    coords : np.ndarray
+        List of coordinates.
+    output_size : Tuple[int, int], optional
+        Output size. Default is (256, 256).
+    dilation_iterations : int, optional
+        Number of iterations to dilate ground truth labels. Default is 1.
+    device : Optional[str], optional
+        Desired device of returned tensors. Default is None.
+    index_map : Optional[torch.Tensor], optional
+        Precomputed index map. Will be generated internally if `index_map` is None. Default is None.
+
+    Returns
+    -------
+    labels : torch.Tensor
+        Tensor where each pixel is a boolean for whether it contains a point in `coords`.
+    deltas : torch.Tensor
+        Tensor where each pixel is a vector to the nearest point in `coords`.
 
     References
     ----------
     .. [1] Laubscher, Emily, et al. "vanvalenlab/deepcell-spots: Deep Learning Library for Spot Detection." GitHub,
            https://github.com/vanvalenlab/deepcell-spots.
     """
+    
+    # Generate the labels tensor.
+    rounded_coords = np.rint(coords).astype(int)
+    sorted_indices = np.lexsort((np.linalg.norm(coords - rounded_coords, axis=1), rounded_coords[:, 0], rounded_coords[:, 1]))
+    coords = coords[sorted_indices]
+    rounded_coords = rounded_coords[sorted_indices]
+    labels = np.zeros(output_size, dtype=bool)
+    labels[rounded_coords[:, 0], rounded_coords[:, 1]] = True
+    if dilation_iterations > 0:
+        labels = ndimage.binary_dilation(labels, structure=ndimage.generate_binary_structure(2, 2),
+                                                 iterations=dilation_iterations)
+    labels = torch.tensor(labels, dtype=torch.bool, device=device)
 
-    # Initialize the deltas and labels arrays.
-    batch_size = len(coords)
-    deltas = np.zeros((batch_size, *output_size, 2), dtype=float)
-    labels = np.zeros((batch_size, *output_size), dtype=bool)
+    # Convert coords to a tensor.
+    coords = torch.tensor(coords, dtype=torch.float, device=device)
+    rounded_coords = torch.tensor(rounded_coords, dtype=torch.float, device=device)
 
-    # Determine the padded length of the coordinates sequence.
-    coords_max_length = np.max([len(coord) for coord in coords])
-    if (coords_pad_length is None) or (coords_pad_length < coords_max_length):
-        coords_pad_length = coords_max_length
+    # Generate index map if not provided.
+    if index_map is None:
+        ii, jj = torch.meshgrid(
+            torch.arange(output_size[0], dtype=torch.float, device=device),
+            torch.arange(output_size[1], dtype=torch.float, device=device),
+            indexing='ij'
+        )
+        index_map = torch.stack((ii, jj), dim=-1).view(1, -1, 2)
 
-    # Generate ranges.
-    i, j = np.arange(output_size[0]), np.arange(output_size[1])
+    # Compute pairwise distances between each pixel and coordinate.
+    distances = torch.cdist(index_map, rounded_coords[None])[0]
+    nearest_coords = coords[torch.argmin(distances, dim=1)]
 
-    # Generate the dilation structuring element.
-    structure = ndimage.generate_binary_structure(2, 2)
+    # Compute the deltas tensor.
+    deltas = (nearest_coords - index_map).view(output_size[0], output_size[1], 2).permute(2, 0, 1)
 
-    for k, coord in enumerate(coords):
-
-        # Remove coordinates outside the output arrays.
-        coord = coord[(coord[:, 0] > -0.5) & (coord[:, 0] < output_size[0] - 0.5) &
-                      (coord[:, 1] > -0.5) & (coord[:, 1] < output_size[1] - 0.5)]
-
-        # Generate the labels array.
-        rounded_coords = np.rint(coord).astype(int)
-        labels[k][rounded_coords[:, 0], rounded_coords[:, 1]] = True
-
-        # Apply the Euclidean distance transform on the labels array.
-        edt_indices = ndimage.distance_transform_edt(~labels[k], return_distances=False, return_indices=True)
-
-        # Pad coordinates to the same length.
-        padding = ((0, coords_pad_length - len(coord)), (0, 0))
-        coord = np.pad(coord, padding, constant_values=-1)
-
-        # Apply the vectorized distance transform function.
-        deltas[k] = vmap_vt(coord, edt_indices, i, j)
-
-        # Dilate the labels array if necessary.
-        if dilation_iterations > 0:
-            labels[k] = ndimage.binary_dilation(labels[k], structure=structure, iterations=dilation_iterations)
-
-    # Expand the shape of the labels array.
-    labels = np.expand_dims(labels, axis=-1)
-
-    return deltas, labels
-
-
-@jit
-def _vt(
-        coord: jax.Array,
-        edt_index: jax.Array,
-        i: int,
-        j: int
-):
-
-    """Voronoi transform for a single pixel.
-
-    Parameters
-    ----------
-    coord : jax.Array
-        List of coordinates.
-    edt_index : jax.Array
-        Euclidean distance transform index.
-    i : int
-        Pixel row index.
-    j : int
-        Pixel column index.
-
-    Returns
-    -------
-    delta : jax.Array
-        Vector to the nearest point.
-    """
-
-    distances = jnp.linalg.norm(coord - edt_index, axis=-1)
-    delta = coord[jnp.argmin(distances)] - jnp.array((i, j))
-
-    return delta
-
-
-vmap_vt = vmap(vmap(_vt, in_axes=(None, 1, None, 0)), in_axes=(None, 1, 0, None))
+    return labels, deltas

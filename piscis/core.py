@@ -1,28 +1,25 @@
 import dask.array as da
 import deeptile
-import jax
-import jax.numpy as jnp
 import numpy as np
+import torch
 import xarray as xr
 
 from deeptile import lift, Output
 from deeptile.core.data import Tiled
 from deeptile.extensions import stitch
-from flax import serialization
-from functools import partial
-from jax import jit
 from skimage.transform import resize
-from typing import Dict, Optional, Sequence, Tuple, Union
+from typing import Optional, Tuple, Union
 
-from piscis import utils
+from piscis.convert import convert_jax_to_torch_state_dict
 from piscis.downloads import download_pretrained_model
 from piscis.models.spots import round_input_size, SpotsModel
 from piscis.paths import MODELS_DIR
+from piscis.utils import compute_spot_coordinates
 
 
-class Piscis:
+class _Piscis:
 
-    """Class for running the Piscis algorithm.
+    """Base class for running the Piscis algorithm.
 
     Attributes
     ----------
@@ -30,72 +27,85 @@ class Piscis:
         Model name.
     batch_size : int
         Batch size for the CNN.
-    variables : Dict
-        Model variables.
     adjustment : str
         Adjustment type applied to images during preprocessing.
     input_size : Tuple[int, int]
         Input size for the CNN.
     dilation_iterations : int
         Number of iterations used to dilate ground truth labels during training.
-    apply : Callable
-        Model apply function.
+    channels : int
+        Number of channels in the input images.
+    device : Optional[Union[str, torch.device]]
+        Device to run the model on.
+    pooling : str
+        Pooling type applied to labels.
+    model : SpotsModel
+        Model.
     """
 
     def __init__(
             self,
-            model_name: str = '20230905',
-            batch_size: int = 4,
-            input_size: Optional[Tuple[int, int]] = None
+            model_name: str,
+            batch_size: int,
+            input_size: Optional[Tuple[int, int]],
+            device: Optional[Union[str, torch.device]],
+            pooling: str
     ) -> None:
 
-        """Initialize a Piscis object and compile the model.
+        """Initialize a Piscis object.
 
         Parameters
         ----------
-        model_name : str, optional
-            Model name. Default is '20230905'.
-        batch_size : int, optional
-            Batch size for the CNN. Default is 4.
-        input_size : Optional[Tuple[int, int]], optional
-            Input size for the CNN. If None, it is obtained from the model dictionary. Default is None.
+        model_name : str
+            Model name.
+        batch_size : int
+            Batch size for the CNN.
+        input_size : Optional[Tuple[int, int]]
+            Input size for the CNN. If None, it is obtained from the model dictionary.
+        device : Optional[Union[str, torch.device]]
+            Device to run the model on.
+        pooling : str
+            Pooling type applied to labels.
         """
-
-        # Set the batch size to 1 if running on CPU.
-        if jax.default_backend() == 'cpu':
-            batch_size = 1
 
         # Load the model.
         self.model_name = model_name
         self.batch_size = batch_size
-        model_path = MODELS_DIR / model_name
+        model_path = MODELS_DIR / f'{model_name}.pt'
         if not model_path.is_file():
-            download_pretrained_model(model_name)
-        with open(MODELS_DIR / model_name, 'rb') as f_model:
-            model_dict = serialization.from_bytes(target=None, encoded_bytes=f_model.read())
-            self.variables = model_dict['variables']
-            self.adjustment = model_dict['adjustment']
+            if (MODELS_DIR / model_name).is_file():
+                state_dict = convert_jax_to_torch_state_dict(model_name)
+                torch.save(state_dict, model_path)
+            else:
+                download_pretrained_model(model_name)
+        with open(model_path, 'rb') as f_model:
+            state_dict = torch.load(f_model, map_location='cpu', weights_only=False)
+            metadata = state_dict.pop('metadata')
+            if 'metrics_log' in metadata:
+                self.metrics_log = metadata['metrics_log']
+            self.adjustment = metadata['adjustment']
             if input_size is None:
-                input_size = model_dict['input_size']
-                input_size = (input_size['0'], input_size['1'])
+                input_size = metadata['input_size']
             else:
                 input_size = round_input_size(input_size)
             self.input_size = input_size
-            self.dilation_iterations = model_dict['dilation_iterations']
-            self.channels = model_dict.get('channels', 1)
-
-        # Define the model apply function.
+            self.dilation_iterations = metadata['dilation_iterations']
+            self.channels = metadata['channels']
+        self.device = device
+        self.pooling = pooling
         kernel_size = (2 * self.dilation_iterations + 1, ) * 2
-        self.apply = partial(apply, variables=self.variables, kernel_size=kernel_size)
+        self.model = SpotsModel(in_channels=self.channels, pooling=self.pooling, kernel_size=kernel_size)
+        self.model.load_state_dict(state_dict)
+        self.model.eval().to(self.device)
 
-    def predict(
+    def _predict(
             self,
             x: Union[np.ndarray, da.Array],
-            stack: bool = False,
-            scale: float = 1.0,
-            threshold: float = 1.0,
-            min_distance: int = 1,
-            intermediates: bool = False
+            stack: bool,
+            scale: float,
+            threshold: float,
+            min_distance: int,
+            intermediates: bool
     ) -> Union[Tuple[np.ndarray, xr.DataArray], np.ndarray]:
 
         """Predict spots in an image or stack of images.
@@ -105,16 +115,15 @@ class Piscis:
         x : np.ndarray or da.Array
             Image or stack of images.
         stack : bool, optional
-            Whether `x` is a stack of images. Default is False.
+            Whether `x` is a stack of images.
         scale : float, optional
-            Scale factor for rescaling `x`. Default is 1.
+            Scale factor for rescaling `x`.
         threshold : float, optional
-            Spot detection threshold. Can be interpreted as the minimum number of fully confident pixels necessary to
-            identify a spot. Default is 1.0.
+            Spot detection threshold.
         min_distance : int, optional
-            Minimum distance between spots. Default is 1.
+            Minimum distance between spots.
         intermediates : bool, optional
-            Whether to return intermediate feature maps. Default is False.
+            Whether to return intermediate feature maps.
 
         Returns
         -------
@@ -125,7 +134,7 @@ class Piscis:
         """
 
         # Preprocess the input.
-        x, batch_axis, x_stats = self._preprocess(x, stack)
+        x, batch_axis = self._preprocess(x, stack)
 
         # Create a DeepTile object and get tiles.
         dt = deeptile.load(x, link_data=False, dask=True)
@@ -144,15 +153,6 @@ class Piscis:
         else:
             pad_mode = 'constant'
         tiles = dt.get_tiles(tile_size=tile_size, overlap=(overlap_i, overlap_j)).pad(mode=pad_mode)
-
-        # Adjust tiles if necessary.
-        if x_stats is not None:
-            if self.adjustment == 'normalize':
-                x_min, x_max = x_stats
-                tiles = lift(lambda t: (t - x_min) / (x_max - x_min + 1e-7))(tiles)
-            elif self.adjustment == 'standardize':
-                x_mean, x_std = x_stats
-                tiles = lift(lambda t: (t - x_mean) / (x_std + 1e-7))(tiles)
 
         # Predict spots in tiles and stitch.
         if stack and batch_axis:
@@ -192,14 +192,10 @@ class Piscis:
             coords = np.asarray(coords)
 
         if intermediates:
-
             dims = tuple(dim for cond, dim in ((batch_axis, 'n'), (stack, 'z')) if cond) + ('c', 'y', 'x')
             y = xr.DataArray(y, dims=dims)
-
             return coords, y
-
         else:
-
             return coords
 
     def _predict_stack(
@@ -239,7 +235,7 @@ class Piscis:
         """
 
         # Lift process and postprocess functions.
-        process_stack = lift(partial(self._process, intermediates=intermediates),
+        process_stack = lift(self._process,
                              vectorized=True, batch_axis=True, pad_final_batch=True, batch_size=self.batch_size)
         postprocess_stack = lift(self._postprocess_stack, vectorized=False, batch_axis=False)
 
@@ -267,8 +263,8 @@ class Piscis:
             while (mod >= stack_axis_len) and (i < i_max):
                 coords, postprocess_variables = postprocess_stack.apply(coords, postprocess_variables)
                 if not intermediates:
-                    carry[0][i, j] = None
-                    carry[1][i, j] = None
+                    carry[-2][i, j] = None
+                    carry[-1][i, j] = None
                 mod = mod - stack_axis_len
                 if j == coords.shape[1] - 1:
                     i = i + 1
@@ -277,9 +273,7 @@ class Piscis:
                     j = j + 1
 
         if intermediates:
-            y = np.concatenate((carry[0],
-                                np.expand_dims(carry[2], axis=-1), np.expand_dims(carry[1], axis=-1)), axis=-1)
-            y = np.moveaxis(y, -1, 1)
+            y = np.concatenate((np.expand_dims(carry[0], axis=-3), carry[1]), axis=-3)
             return coords, y
         else:
             return coords
@@ -318,24 +312,17 @@ class Piscis:
         """
 
         # Process tiles.
-        if intermediates:
-            deltas, pooled_labels, labels = self._process(tiles, intermediates=intermediates)
-        else:
-            deltas, pooled_labels = self._process(tiles, intermediates=intermediates)
-            labels = None
+        labels, deltas = self._process(tiles)
 
         # Postprocess tiles.
         coords = np.empty(len(deltas), dtype=object)
-        for i, (d, pl) in enumerate(zip(deltas, pooled_labels)):
-            coords[i] = utils.compute_spot_coordinates(d, pl, threshold=threshold, min_distance=min_distance)
+        for i, (l, d) in enumerate(zip(labels, deltas)):
+            coords[i] = compute_spot_coordinates(l, d, threshold=threshold, min_distance=min_distance)
             coords[i][:, -2:] = coords[i][:, -2:] / scales
         coords = Output(coords, isimage=False, stackable=False, tile_scales=(1.0, 1.0))
 
         if intermediates:
-            y = np.concatenate(
-                (deltas, np.expand_dims(labels, axis=-1), np.expand_dims(pooled_labels, axis=-1)), axis=-1
-            )
-            y = np.moveaxis(y, -1, 1)
+            y = np.concatenate((np.expand_dims(labels, axis=-3), deltas), axis=-3)
             return coords, y
         else:
             return coords
@@ -344,7 +331,7 @@ class Piscis:
             self,
             x: Union[np.ndarray, da.Array],
             stack: bool
-    ) -> Tuple[da.Array, bool, Optional[Tuple[np.ndarray, np.ndarray]]]:
+    ) -> Tuple[da.Array, bool]:
 
         """Preprocess the input.
 
@@ -361,8 +348,6 @@ class Piscis:
             Preprocessed image or stack of images.
         batch_axis : bool
             Whether `x` has a batch axis.
-        x_stats : Optional[Tuple[np.ndarray, np.ndarray]]
-            Statistics of `x` across each plane used for image adjustment.
 
         Raises
         ------
@@ -394,27 +379,17 @@ class Piscis:
         if isinstance(x, xr.DataArray):
             x = x.data
         if not isinstance(x, da.Array):
-            x = da.from_array(x)
+            chunks = []
+            if batch_axis:
+                chunks.append(self.batch_size)
+            if stack:
+                chunks.append(1)
+            chunks = chunks + [self.channels, *self.input_size]
+            x = da.from_array(x, chunks=chunks)
 
-        # Standardize the input if necessary.
-        if self.adjustment == 'normalize':
-            x_min = x.min(axis=(-2, -1), keepdims=True).compute()
-            x_max = x.max(axis=(-2, -1), keepdims=True).compute()
-            x_stats = (x_min, x_max)
-        elif self.adjustment == 'standardize':
-            x_mean = x.mean(axis=(-2, -1), keepdims=True).compute()
-            x_std = x.std(axis=(-2, -1), keepdims=True).compute()
-            x_stats = (x_mean, x_std)
-        else:
-            x_stats = None
+        return x, batch_axis
 
-        return x, batch_axis, x_stats
-
-    def _process(
-            self,
-            tiles: Tiled,
-            intermediates: bool
-    ) -> Union[Tuple[np.ndarray, np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray]]:
+    def _process(self, tiles: Tiled) -> Tuple[np.ndarray, np.ndarray]:
 
         """Process tiles.
 
@@ -422,43 +397,39 @@ class Piscis:
         ----------
         tiles : Tiled
             Tiles of images.
-        intermediates : bool
-            Whether to keep intermediate feature maps.
 
         Returns
         -------
+        labels : np.ndarray
+            Predicted labels.
         deltas : np.ndarray
             Predicted displacement vectors.
-        pooled_labels : np.ndarray
-            Predicted pooled labels.
-        labels : np.ndarray, optional
-            Predicted binary labels. Only returned if `intermediates` is True.
         """
 
-        # Compute Dask arrays if necessary.
+        # Adjust tiles if necessary.
         tiles = tiles.compute()
+        if self.adjustment == 'normalize':
+            x_min = tiles.min(axis=(-2, -1), keepdims=True)
+            x_max = tiles.max(axis=(-2, -1), keepdims=True)
+            tiles = (tiles - x_min) / (x_max - x_min + 1e-7)
+        elif self.adjustment == 'standardize':
+            x_mean = tiles.mean(axis=(-2, -1), keepdims=True)
+            x_std = tiles.std(axis=(-2, -1), keepdims=True)
+            tiles = (tiles - x_mean) / (x_std + 1e-7)
 
         # Resize tiles if necessary.
         if tiles.shape[-2:] != self.input_size:
             tiles = resize(tiles, (*tiles.shape[:-2], *self.input_size), preserve_range=True)
 
-        # Run the jitted model apply function on tiles.
-        if intermediates:
-            deltas, pooled_labels, labels = self.apply(tiles)
-            deltas = np.asarray(deltas)
-            pooled_labels = np.asarray(pooled_labels)
-            labels = np.asarray(labels)
-            return deltas, pooled_labels, labels
-        else:
-            deltas, pooled_labels, _ = self.apply(tiles)
-            deltas = np.asarray(deltas)
-            pooled_labels = np.asarray(pooled_labels)
-            return deltas, pooled_labels
+        # Run the model on tiles.
+        labels, deltas = self._apply(tiles)
+        
+        return labels, deltas
 
     @staticmethod
     def _postprocess_stack(
+            labels: np.ndarray,
             deltas: np.ndarray,
-            pooled_labels: np.ndarray,
             scales: np.ndarray,
             threshold: float,
             min_distance: int
@@ -468,10 +439,10 @@ class Piscis:
 
         Parameters
         ----------
+        labels : np.ndarray
+            Predicted labels.
         deltas : np.ndarray
             Predicted displacement vectors.
-        pooled_labels : np.ndarray
-            Predicted pooled labels.
         scales : np.ndarray
             Scales for rescaling tiles.
         threshold : float
@@ -487,52 +458,234 @@ class Piscis:
         """
 
         # Compute spot coordinates.
-        coords = utils.compute_spot_coordinates(deltas, pooled_labels, threshold=threshold, min_distance=min_distance)
+        coords = compute_spot_coordinates(labels, deltas, threshold=threshold, min_distance=min_distance)
 
         # Rescale coordinates.
         coords[:, -2:] = coords[:, -2:] / scales
         coords = Output(coords, isimage=False, stackable=False, tile_scales=(1.0, 1.0))
 
         return coords
+    
 
+    def _apply(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
 
-@partial(jit, static_argnums=2)
-def apply(
-        x: jax.Array,
-        variables: Dict,
-        kernel_size: Sequence[int]
-) -> Tuple[jax.Array, jax.Array, jax.Array]:
+        """Apply SpotsModel to a batch images.
 
-    """Apply SpotsModel to a batch images.
+        x : torch.Tensor
+            Batch of images.
 
-    x : jax.Array
-        Batch of images.
-    variables : Dict
-        Model variables.
-    kernel_size : Sequence[int]
-        Kernel size or window size of the sum pooling operation.
+        Returns
+        -------
+        labels : np.ndarray
+            Predicted binary labels.
+        deltas : np.ndarray
+            Predicted displacements vectors.
+        """
 
-    Returns
-    -------
-    deltas : jax.Array
-        Predicted displacements vectors.
-    pooled_labels : jax.Array
-        Predicted pooled labels.
-    labels : jax.Array
-        Predicted binary labels.
+        x = torch.from_numpy(x.astype(np.float32, copy=False)).to(self.device)
+        with torch.inference_mode():
+            labels, deltas = self.model(x)
+
+        labels = labels.cpu().numpy()
+        deltas = deltas.cpu().numpy()
+
+        return labels, deltas
+    
+
+class Piscis(_Piscis):
+
+    """Class for running the Piscis algorithm.
+
+    Attributes
+    ----------
+    model_name : str
+        Model name.
+    batch_size : int
+        Batch size for the CNN.
+    adjustment : str
+        Adjustment type applied to images during preprocessing.
+    input_size : Tuple[int, int]
+        Input size for the CNN.
+    dilation_iterations : int
+        Number of iterations used to dilate ground truth labels during training.
+    channels : int
+        Number of channels in the input images.
+    device : Optional[Union[str, torch.device]]
+        Device to run the model on.
+    pooling : str
+        Pooling type applied to labels.
+    model : SpotsModel
+        Model.
     """
 
-    x = jnp.moveaxis(x, -3, -1)
-    deltas, labels = SpotsModel().apply(variables, x, False)
-    labels = labels[:, :, :, 0]
-    pooled_labels = utils.vmap_sum_pool(deltas, labels, kernel_size)
+    def __init__(
+            self,
+            model_name: str = '20251212',
+            batch_size: int = 1,
+            input_size: Optional[Tuple[int, int]] = None,
+            device: Optional[Union[str, torch.device]] = None
+    ) -> None:
 
-    return deltas, pooled_labels, labels
+        """Initialize a Piscis object.
+
+        Parameters
+        ----------
+        model_name : str, optional
+            Model name. Default is '20251212'.
+        batch_size : int, optional
+            Batch size for the CNN. Default is 1.
+        input_size : Optional[Tuple[int, int]], optional
+            Input size for the CNN. If None, it is obtained from the model dictionary. Default is None.
+        device : Optional[Union[str, torch.device]], optional
+            Device to run the model on. Default is None.
+        """
+
+        super().__init__(model_name=model_name, batch_size=batch_size, input_size=input_size, device=device,
+                         pooling='max')
+        
+    def predict(
+            self,
+            x: Union[np.ndarray, da.Array],
+            stack: bool = False,
+            scale: float = 1.0,
+            threshold: float = 0.5,
+            min_distance: int = 1,
+            intermediates: bool = False
+    ) -> Union[Tuple[np.ndarray, xr.DataArray], np.ndarray]:
+
+        """Predict spots in an image or stack of images.
+
+        Parameters
+        ----------
+        x : np.ndarray or da.Array
+            Image or stack of images.
+        stack : bool, optional
+            Whether `x` is a stack of images. Default is False.
+        scale : float, optional
+            Scale factor for rescaling `x`. Default is 1.
+        threshold : float, optional
+            Spot detection threshold. Default is 0.5.
+        min_distance : int, optional
+            Minimum distance between spots. Default is 1.
+        intermediates : bool, optional
+            Whether to return intermediate feature maps. Default is False.
+
+        Returns
+        -------
+        coords : np.ndarray
+            Predicted spot coordinates.
+        y : np.ndarray, optional
+            Intermediate feature maps. Only returned if `intermediates` is True.
+        """
+
+        pred = self._predict(x, stack, scale, threshold, min_distance, intermediates)
+        if intermediates:
+            coords, y = pred
+            return coords, y
+        else:
+            coords = pred
+            return coords
+        
+
+class PiscisLegacy(_Piscis):
+
+    """Class for running the PyTorch port of the legacy Piscis algorithm originally implemented in JAX.
+
+    Attributes
+    ----------
+    model_name : str
+        Model name.
+    batch_size : int
+        Batch size for the CNN.
+    adjustment : str
+        Adjustment type applied to images during preprocessing.
+    input_size : Tuple[int, int]
+        Input size for the CNN.
+    dilation_iterations : int
+        Number of iterations used to dilate ground truth labels during training.
+    channels : int
+        Number of channels in the input images.
+    device : Optional[Union[str, torch.device]]
+        Device to run the model on.
+    pooling : str
+        Pooling type applied to labels.
+    model : SpotsModel
+        Model.
+    """
+
+    def __init__(
+            self,
+            model_name: str = '20230905',
+            batch_size: int = 1,
+            input_size: Optional[Tuple[int, int]] = None,
+            device: Optional[Union[str, torch.device]] = None
+    ) -> None:
+
+        """Initialize a Piscis object.
+
+        Parameters
+        ----------
+        model_name : str, optional
+            Model name. Default is '20230905'.
+        batch_size : int, optional
+            Batch size for the CNN. Default is 1.
+        input_size : Optional[Tuple[int, int]], optional
+            Input size for the CNN. If None, it is obtained from the model dictionary. Default is None.
+        device : Optional[Union[str, torch.device]], optional
+            Device to run the model on. Default is None.
+        """
+
+        super().__init__(model_name=model_name, batch_size=batch_size, input_size=input_size, device=device,
+                         pooling='sum')
+        
+    def predict(
+            self,
+            x: Union[np.ndarray, da.Array],
+            stack: bool = False,
+            scale: float = 1.0,
+            threshold: float = 1.0,
+            min_distance: int = 1,
+            intermediates: bool = False
+    ) -> Union[Tuple[np.ndarray, xr.DataArray], np.ndarray]:
+
+        """Predict spots in an image or stack of images.
+
+        Parameters
+        ----------
+        x : np.ndarray or da.Array
+            Image or stack of images.
+        stack : bool, optional
+            Whether `x` is a stack of images. Default is False.
+        scale : float, optional
+            Scale factor for rescaling `x`. Default is 1.
+        threshold : float, optional
+            Spot detection threshold. Can be interpreted as the minimum number of fully confident pixels necessary to
+            identify a spot. Default is 1.0.
+        min_distance : int, optional
+            Minimum distance between spots. Default is 1.
+        intermediates : bool, optional
+            Whether to return intermediate feature maps. Default is False.
+
+        Returns
+        -------
+        coords : np.ndarray
+            Predicted spot coordinates.
+        y : np.ndarray, optional
+            Intermediate feature maps. Only returned if `intermediates` is True.
+        """
+
+        pred = self._predict(x, stack, scale, threshold, min_distance, intermediates)
+        if intermediates:
+            coords, y = pred
+            return coords, y
+        else:
+            coords = pred
+            return coords
 
 
 def adjust_parameters(
         y: xr.DataArray,
-        threshold: float = 1.0,
+        threshold: float = 0.5,
         min_distance: int = 1
 ) -> np.ndarray:
     """Adjust tunable parameters for a given set of intermediate feature maps.
@@ -542,8 +695,7 @@ def adjust_parameters(
     y : xr.DataArray
         Intermediate feature maps.
     threshold: float
-        Spot detection threshold. Can be interpreted as the minimum number of fully confident pixels necessary to
-        identify a spot. Default is 1.0.
+        Spot detection threshold. Default is 0.5.
     min_distance : int, optional
         Minimum distance between spots. Default is 1.
 
@@ -558,15 +710,14 @@ def adjust_parameters(
         batch_axis_len = y.shape[0]
         coords = np.empty(batch_axis_len, dtype=object)
         for i in range(batch_axis_len):
-            deltas = np.moveaxis(y[i, ..., :2, :, :].to_numpy(), -3, -1)
-            pooled_labels = y[i, ..., 3, :, :].to_numpy()
-            coords[i] = utils.compute_spot_coordinates(deltas, pooled_labels,
-                                                       threshold=threshold, min_distance=min_distance)
+            labels = y[i, ..., 0, :, :].to_numpy()
+            deltas = y[i, ..., 1:, :, :].to_numpy()
+            coords[i] = compute_spot_coordinates(labels, deltas, threshold=threshold, min_distance=min_distance)
 
     else:
 
-        deltas = np.moveaxis(y[..., :2, :, :].to_numpy(), -3, -1)
-        pooled_labels = y[..., 3, :, :].to_numpy()
-        coords = utils.compute_spot_coordinates(deltas, pooled_labels, threshold=threshold, min_distance=min_distance)
+        labels = y[..., 0, :, :].to_numpy()
+        deltas = y[..., 1:, :, :].to_numpy()
+        coords = compute_spot_coordinates(labels, deltas, threshold=threshold, min_distance=min_distance)
 
     return coords

@@ -19,13 +19,11 @@ First, import the necessary libraries and Piscis modules for handling data loadi
 
 **Step 2: Download the Piscis Dataset**
 
-Download the dataset required for this example. Here, we use the dataset labeled ``20230905``, which is the dataset used to train and test the model from our paper. The :any:`download_dataset <downloads.download_dataset>` function downloads the specific dataset from our `Hugging Face Dataset Repository <https://huggingface.co/datasets/wniu/Piscis>`_.
+Download the dataset required for this example. Here, we use the dataset labeled ``20251212``. The :any:`download_dataset <downloads.download_dataset>` function downloads the specific dataset from our `Hugging Face Dataset Repository <https://huggingface.co/datasets/wniu/Piscis>`_.
 
 .. code:: ipython3
 
-    download_dataset('20230905', '')
-
-You will notice progress bars as each ``.npz`` file is downloaded. These ``.npz`` files contain fluorescence microscopy images with spots and their corresponding ground truth annotations.
+    download_dataset('20251212', '')
 
 **Step 3: Load the Test Dataset**
 
@@ -33,20 +31,19 @@ Load a subset of the Piscis test dataset, pre-process the images, and extract th
 
 .. code:: ipython3
 
-    test_ds = load_datasets('20230905/A3_GFP1_A594.npz', load_train=False, load_valid=False, load_test=True)['test']
-    images = pad_and_stack(test_ds['images'])
-    test_ds['images'] = images
-    coords = test_ds['coords']
+    test_ds = load_datasets('20251212/A3_GFP1_A594', load_train=False, load_val=False, load_test=True)['test']
+    images = pad_and_stack(test_ds['x'])
+    coords = test_ds['y']
 
 Note that here, only the test images and annotations are loaded, which the model never saw during training.
 
 **Step 4: Load the Piscis Model**
 
-Load the Piscis model trained using the ``20230905`` dataset. The :any:`Piscis <core.Piscis>` class handles model weight loading and seamless scalability to large images and batches via `deeptile <https://github.com/arjunrajlaboratory/DeepTile>`_ under the hood.
+Load the Piscis model trained using the ``20251212`` dataset. The :any:`Piscis <core.Piscis>` class handles model weight loading and seamless scalability to large images and batches via `deeptile <https://github.com/arjunrajlaboratory/DeepTile>`_ under the hood.
 
 .. code:: ipython3
 
-    model = Piscis(model_name='20230905')
+    model = Piscis(model_name='20251212')
 
 When you load the model for the first time, the :any:`Piscis <core.Piscis>` class will automatically call the :any:`download_pretrained_model <downloads.download_pretrained_model>` function to download the model from our `Hugging Face Model Repository <https://huggingface.co/wniu/Piscis>`_.
 
@@ -56,7 +53,7 @@ Pass the test images through the model to obtain predicted coordinates and inter
 
 .. code:: ipython3
 
-    coords_pred, y = model.predict(images, threshold=1.0, intermediates=True)
+    coords_pred, y = model.predict(images, threshold=0.5, intermediates=True)
 
 - ``coords_pred``: Predicted spot coordinates.
 - ``y``: Intermediate feature maps. Only returned if ``intermediates`` is ``True``.
@@ -68,29 +65,29 @@ Visualize the input images, ground truth spots, predicted spots, and intermediat
 .. code:: ipython3
 
     i = 2
-    
+
     fig, axs = plt.subplots(2, 3, figsize=(15, 10), sharex=True, sharey=True)
-    
+
     axs[0, 0].imshow(images[i])
     axs[0, 0].set_title('Image')
-    
+
     axs[0, 1].imshow(images[i])
     axs[0, 1].plot(coords[i][:, 1], coords[i][:, 0], '.', c='white')
     axs[0, 1].set_title('Ground Truth Spots')
-    
+
     axs[0, 2].imshow(images[i])
     axs[0, 2].plot(coords_pred[i][:, 1], coords_pred[i][:, 0], '.', c='white')
     axs[0, 2].set_title('Predicted Spots')
-    
-    axs[1, 0].imshow(np.linalg.norm(y[i, :2], axis=0), cmap='gray')
-    axs[1, 0].set_title(r'$\|\mathrm{Displacements}\|_2$')
-    
-    axs[1, 1].imshow(y[i, 2], cmap='gray')
-    axs[1, 1].set_title('Labels')
-    
-    axs[1, 2].imshow(y[i, 3], cmap='gray')
-    axs[1, 2].set_title('Pooled Labels')
-    
+
+    axs[1, 0].imshow(y[i, 0], cmap='gray')
+    axs[1, 0].set_title('Pooled Labels')
+
+    axs[1, 1].imshow(y[i, 1], cmap='coolwarm')
+    axs[1, 1].set_title('Vertical Displacements')
+
+    axs[1, 2].imshow(y[i, 2], cmap='coolwarm')
+    axs[1, 2].set_title('Horizontal Displacements')
+
     plt.tight_layout()
 
 .. image:: /_static/inference.png
@@ -123,4 +120,4 @@ Piscis also supports models trained on multi-channel images, where the input inc
 - **C:** Number of channels (*only included if the model was trained on multi-channel images*).
 - **Y, X:** Spatial dimensions.
 
-**Note:** All pre-trained models, including ``20230905``, accept only single-channel inputs. In this case, the channel dimension is omitted from the input. If you train a custom model on multi-channel images, ensure the axes are ordered correctly and adjust the ``stack`` parameter accordingly.
+**Note:** All pre-trained models, including ``20251212``, accept only single-channel inputs. In this case, the channel dimension is omitted from the input. If you train a custom model on multi-channel images, ensure the axes are ordered correctly and adjust the ``stack`` parameter accordingly.
