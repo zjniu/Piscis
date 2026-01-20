@@ -45,7 +45,8 @@ def list_pretrained_models() -> Sequence[str]:
     """
 
     fs = HfFileSystem()
-    pretrained_models = [path.removeprefix(HF_MODELS_DIR) for path in fs.ls(HF_MODELS_DIR, detail=False)]
+    pretrained_models = [path.removeprefix(HF_MODELS_DIR) for path in fs.ls(HF_MODELS_DIR, detail=False)
+                         if not path.endswith('.pt')]
 
     return pretrained_models
 
