@@ -13,8 +13,8 @@ Dependencies
 Piscis relies on the following packages, which are automatically installed with ``pip``:
 
 - `deeptile <https://github.com/arjunrajlaboratory/DeepTile>`_
-- `huggingface-hub <https://github.com/huggingface/huggingface_hub>`_
-- `imageio <https://github.com/imageio/imageio>`_
+- `huggingface-hub <https://huggingface.co/docs/huggingface_hub>`_
+- `imageio <https://imageio.readthedocs.io/>`_
 - `numba <https://numba.pydata.org/>`_
 - `numpy <https://numpy.org/>`_
 - `opencv-python <https://opencv.org/>`_
@@ -22,8 +22,8 @@ Piscis relies on the following packages, which are automatically installed with 
 - `scikit-image <https://scikit-image.org/>`_
 - `scipy <https://scipy.org/>`_
 - `torch <https://pytorch.org/>`_
-- `torchvision <https://pytorch.org/>`_
-- `tqdm <https://github.com/tqdm/tqdm>`_
+- `torchvision <https://pytorch.org/vision>`_
+- `tqdm <https://tqdm.github.io/>`_
 - `xarray <https://xarray.dev/>`_
 
 Contribution and Support
