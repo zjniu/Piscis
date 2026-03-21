@@ -29,7 +29,7 @@ def download_pretrained_model(
     fs = HfFileSystem()
     hf_model_path = f'{HF_MODELS_DIR}{model_name}.pt'
     if fs.exists(hf_model_path):
-        fs.download(hf_model_path, str(MODELS_DIR / f'{model_name}.pt'), progress=False)
+        fs.download(hf_model_path, str(MODELS_DIR / f'{model_name}.pt'))
     else:
         raise ValueError(f"Model {model_name} is not found.")
 
@@ -75,7 +75,7 @@ def download_dataset(
     fs = HfFileSystem()
     hf_dataset_path = f'{HF_DATASETS_DIR}{dataset_name}'
     if fs.exists(hf_dataset_path) and ('/' not in dataset_name):
-        fs.download(hf_dataset_path, str(path), recursive=True, progress=False)
+        fs.download(hf_dataset_path, str(path), recursive=True)
     else:
         raise ValueError(f"Dataset {dataset_name} is not found.")
 
