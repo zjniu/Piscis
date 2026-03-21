@@ -189,8 +189,7 @@ def linear_sum_assignment(
         Tuple of row and column indices of the matches.
     """
 
-    if threshold is not None:
-        cost_matrix = np.where(cost_matrix > threshold, np.max(cost_matrix), cost_matrix)
+    cost_matrix = np.where(cost_matrix > threshold, np.max(cost_matrix), cost_matrix)
     matches = optimize.linear_sum_assignment(cost_matrix)
     below_threshold = [i for i, match in enumerate(zip(*matches)) if cost_matrix[match] <= threshold]
     matches = (matches[0][below_threshold], matches[1][below_threshold])
