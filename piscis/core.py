@@ -79,7 +79,7 @@ class _Piscis:
             else:
                 download_pretrained_model(model_name)
         with open(model_path, 'rb') as f_model:
-            state_dict = torch.load(f_model, map_location='cpu', weights_only=False)
+            state_dict = torch.load(f_model, map_location='cpu')
             metadata = state_dict.pop('metadata')
             if 'metrics_log' in metadata:
                 self.metrics_log = metadata['metrics_log']
