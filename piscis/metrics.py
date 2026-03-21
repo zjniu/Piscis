@@ -171,7 +171,7 @@ def _compute_metrics(
 
 def linear_sum_assignment(
         cost_matrix: np.ndarray,
-        threshold: Optional[float] = None
+        threshold: float
 ) -> Tuple[np.ndarray, np.ndarray]:
 
     """Solve the linear sum assignment problem for a given cost matrix.
@@ -180,8 +180,8 @@ def linear_sum_assignment(
     ----------
     cost_matrix : np.ndarray
         Cost matrix.
-    threshold : float, optional
-        Threshold for matching. Default is None.
+    threshold : float
+        Threshold for matching.
 
     Returns
     -------
