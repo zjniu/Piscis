@@ -274,12 +274,12 @@ def convert_dataset(
     train_padding = len(str(len(x_train)))
     val_padding = len(str(len(x_val)))
     test_padding = len(str(len(x_test)))
-    for i, j in enumerate(range(len(x_train))):
-        tifffile.imwrite(x_train_path / f'{i:0{train_padding}d}.tif', x_train[j])
-        np.savetxt(y_train_path / f'{i:0{train_padding}d}.csv', y_train[j], delimiter=',')
-    for i, j in enumerate(range(len(x_val))):
-        tifffile.imwrite(x_val_path / f'{i:0{val_padding}d}.tif', x_val[j])
-        np.savetxt(y_val_path / f'{i:0{val_padding}d}.csv', y_val[j], delimiter=',')
-    for i, j in enumerate(range(len(x_test))):
-        tifffile.imwrite(x_test_path / f'{i:0{test_padding}d}.tif', x_test[j])
-        np.savetxt(y_test_path / f'{i:0{test_padding}d}.csv', y_test[j], delimiter=',')
+    for i in range(len(x_train)):
+        tifffile.imwrite(x_train_path / f'{i:0{train_padding}d}.tif', x_train[i])
+        np.savetxt(y_train_path / f'{i:0{train_padding}d}.csv', y_train[i], delimiter=',')
+    for i in range(len(x_val)):
+        tifffile.imwrite(x_val_path / f'{i:0{val_padding}d}.tif', x_val[i])
+        np.savetxt(y_val_path / f'{i:0{val_padding}d}.csv', y_val[i], delimiter=',')
+    for i in range(len(x_test)):
+        tifffile.imwrite(x_test_path / f'{i:0{test_padding}d}.tif', x_test[i])
+        np.savetxt(y_test_path / f'{i:0{test_padding}d}.csv', y_test[i], delimiter=',')
