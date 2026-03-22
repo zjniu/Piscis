@@ -81,8 +81,6 @@ class _Piscis:
         with open(model_path, 'rb') as f_model:
             state_dict = torch.load(f_model, map_location='cpu')
             metadata = state_dict.pop('metadata')
-            if 'metrics_log' in metadata:
-                self.metrics_log = metadata['metrics_log']
             self.adjustment = metadata['adjustment']
             if input_size is None:
                 input_size = metadata['input_size']
@@ -114,22 +112,22 @@ class _Piscis:
         ----------
         x : np.ndarray or da.Array
             Image or stack of images.
-        stack : bool, optional
+        stack : bool
             Whether `x` is a stack of images.
-        scale : float, optional
+        scale : float
             Scale factor for rescaling `x`.
-        threshold : float, optional
+        threshold : float
             Spot detection threshold.
-        min_distance : int, optional
+        min_distance : int
             Minimum distance between spots.
-        intermediates : bool, optional
+        intermediates : bool
             Whether to return intermediate feature maps.
 
         Returns
         -------
         coords : np.ndarray
             Predicted spot coordinates.
-        y : np.ndarray, optional
+        y : xr.DataArray, optional
             Intermediate feature maps. Only returned if `intermediates` is True.
         """
 
@@ -344,7 +342,7 @@ class _Piscis:
 
         Returns
         -------
-        x : Union[np.ndarray, da.Array]
+        x : da.Array
             Preprocessed image or stack of images.
         batch_axis : bool
             Whether `x` has a batch axis.
@@ -467,11 +465,13 @@ class _Piscis:
         return coords
     
 
-    def _apply(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _apply(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
 
-        """Apply SpotsModel to a batch images.
+        """Apply SpotsModel to a batch of images.
 
-        x : torch.Tensor
+        Parameters
+        ----------
+        x : np.ndarray
             Batch of images.
 
         Returns
@@ -479,7 +479,7 @@ class _Piscis:
         labels : np.ndarray
             Predicted binary labels.
         deltas : np.ndarray
-            Predicted displacements vectors.
+            Predicted displacement vectors.
         """
 
         x = torch.from_numpy(x.astype(np.float32, copy=False)).to(self.device)
@@ -574,7 +574,7 @@ class Piscis(_Piscis):
         -------
         coords : np.ndarray
             Predicted spot coordinates.
-        y : np.ndarray, optional
+        y : xr.DataArray, optional
             Intermediate feature maps. Only returned if `intermediates` is True.
         """
 
@@ -621,7 +621,7 @@ class PiscisLegacy(_Piscis):
             device: Optional[Union[str, torch.device]] = None
     ) -> None:
 
-        """Initialize a Piscis object.
+        """Initialize a PiscisLegacy object.
 
         Parameters
         ----------
@@ -670,7 +670,7 @@ class PiscisLegacy(_Piscis):
         -------
         coords : np.ndarray
             Predicted spot coordinates.
-        y : np.ndarray, optional
+        y : xr.DataArray, optional
             Intermediate feature maps. Only returned if `intermediates` is True.
         """
 
@@ -688,13 +688,14 @@ def adjust_parameters(
         threshold: float = 0.5,
         min_distance: int = 1
 ) -> np.ndarray:
+    
     """Adjust tunable parameters for a given set of intermediate feature maps.
 
     Parameters
     ----------
     y : xr.DataArray
         Intermediate feature maps.
-    threshold: float
+    threshold : float, optional
         Spot detection threshold. Default is 0.5.
     min_distance : int, optional
         Minimum distance between spots. Default is 1.

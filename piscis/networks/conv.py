@@ -4,7 +4,7 @@ import torch.nn as nn
 from functools import partial
 from torchvision.ops import StochasticDepth
 from torchvision.utils import _make_ntuple
-from typing import Any, Optional, Sequence, Tuple, Union
+from typing import Any, Optional, Sequence, Union
 
 ModuleDef = Any
 
@@ -18,9 +18,9 @@ class Conv(nn.Module):
         Number of input channels.
     out_channels : int
         Number of output channels.
-    kernel_size : Union[int, Sequence[int]]
+    kernel_size : Union[int, Sequence[int]], optional
         Size of the convolutional kernel. Default is 3.
-    stride : Union[int, Sequence[int]]
+    stride : Union[int, Sequence[int]], optional
         Stride of the convolution. Default is 1.
     padding : Optional[Union[int, Sequence[int], str]], optional
         Padding of the convolution. Default is None.
@@ -99,7 +99,7 @@ class Conv(nn.Module):
 
         self.conv = nn.Sequential(*layer_list)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.conv(x)
     
 
@@ -267,13 +267,13 @@ class MBConv(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
 
-        input = x
+        residual = x
 
         x = self.block(x)
 
         if self.use_res_connect:
             x = self.stochastic_depth(x)
-            x = x + input
+            x = x + residual
 
         return x
 
@@ -387,12 +387,12 @@ class FusedMBConv(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
 
-        input = x
+        residual = x
 
         x = self.block(x)
 
         if self.use_res_connect:
             x = self.stochastic_depth(x)
-            x = x + input
+            x = x + residual
 
         return x

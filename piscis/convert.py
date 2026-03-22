@@ -3,10 +3,16 @@ import tifffile
 import torch
 
 from pathlib import Path
+from typing import Dict, Optional, Union
 
 from piscis.paths import MODELS_DIR
 
-def convert_jax_to_torch_state_dict(jax_model_name, state_dict=None, verbose=False):
+
+def convert_jax_to_torch_state_dict(
+        jax_model_name: str,
+        state_dict: Optional[Dict] = None,
+        verbose: bool = False
+) -> Dict:
 
     """Convert Piscis JAX model weights to PyTorch state dict.
 
@@ -14,14 +20,19 @@ def convert_jax_to_torch_state_dict(jax_model_name, state_dict=None, verbose=Fal
     ----------
     jax_model_name : str
         JAX model name.
-    state_dict : dict
+    state_dict : Optional[Dict], optional
         Template state dict from PyTorch model. Default is None.
     verbose : bool, optional
         Whether to print conversion progress. Default is False.
 
+    Returns
+    -------
+    state_dict : Dict
+        PyTorch state dict with converted weights.
+
     Raises
     ------
-    ModuleNotFoundError
+    ImportError
         If Flax cannot be imported.
     ValueError
         If there is a shape mismatch between JAX and PyTorch weights.
@@ -196,8 +207,6 @@ def convert_jax_to_torch_state_dict(jax_model_name, state_dict=None, verbose=Fal
     # Map weights from JAX to PyTorch.
     for k, v in fpn_mapping.items():
 
-        bs = jax_variables['batch_stats']
-
         if v[-1] in ('mean', 'var'):
             bs = jax_variables['batch_stats']
             for key in v:
@@ -217,7 +226,7 @@ def convert_jax_to_torch_state_dict(jax_model_name, state_dict=None, verbose=Fal
                 w_torch = w_torch.permute(3, 2, 0, 1)
 
         if k.startswith('fpn.output.conv.2'):
-            w_torch = torch.concatenate([w_torch[2:], w_torch[:2]], dim=0)
+            w_torch = torch.cat([w_torch[2:], w_torch[:2]], dim=0)
         
         if check_shapes and (state_dict[k].shape != w_torch.shape):
             raise ValueError(f"Shape mismatch for {k}: {state_dict[k].shape} vs {w_torch.shape}")
@@ -232,17 +241,17 @@ def convert_jax_to_torch_state_dict(jax_model_name, state_dict=None, verbose=Fal
 
 
 def convert_dataset(
-        dataset_path: str,
-        new_dataset_path: str
+        dataset_path: Union[str, Path],
+        new_dataset_path: Union[str, Path]
 ) -> None:
 
     """Convert a Piscis dataset saved as a .npz file to directories of .tif and .csv files.
     
     Parameters
     ----------
-    dataset_path : str
+    dataset_path : Union[str, Path]
         Path to the .npz dataset file.
-    new_dataset_path : str
+    new_dataset_path : Union[str, Path]
         Path to the directory for the converted dataset.
     """
 

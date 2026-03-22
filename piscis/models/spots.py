@@ -62,14 +62,14 @@ class SpotsModel(nn.Module):
     ----------
     in_channels : int, optional
         Number of input channels. Default is 1.
+    stochastic_depth_prob : float, optional
+        Stochastic depth probability. Default is 0.0.
     style : bool, optional
         Whether to use style transfer. Default is True.
     pooling : str, optional
         Pooling type applied to labels. Supported types are 'max' and 'sum'. Default is 'max'.
-    stochastic_depth_prob : float, optional
-        Stochastic depth probability. Default is 0.0.
     kernel_size : Sequence[int], optional
-        Kernel size or window size of the max pooling operation. Default is (3, 3).
+        Kernel size or window size of the pooling operation. Default is (3, 3).
     """
 
     def __init__(
@@ -112,7 +112,7 @@ class SpotsModel(nn.Module):
         elif pooling == 'sum':
             self.pool = vmap_deformable_sum_pool
         else:
-            raise ValueError(f"Pooling type is not supported.")
+            raise ValueError(f"Pooling type {pooling} is not supported.")
         self.kernel_size = kernel_size
 
     def forward(
@@ -163,7 +163,7 @@ def round_input_size(input_size: Tuple[int, int]) -> Tuple[int, int]:
     """
 
     stride_scale = np.prod([block['stride'] for block in BLOCK_ARGS])
-    pool_scale = 2 ** sum((0 if block['pool'] is None else 1 for block in BLOCK_ARGS if block['pool']))
+    pool_scale = 2 ** sum((1 for block in BLOCK_ARGS if block['pool']))
     scale = stride_scale * pool_scale
     rounded_input_size = scale * np.ceil(np.array(input_size) / scale).astype(int)
     rounded_input_size = (int(rounded_input_size[0]), int(rounded_input_size[1]))

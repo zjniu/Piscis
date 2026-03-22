@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from numba import njit
 from scipy import optimize
 from skimage import feature, measure
-from typing import Dict, List, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 
 def compute_spot_coordinates(
@@ -115,7 +115,7 @@ vmap_deformable_max_pool = torch.vmap(deformable_max_pool, in_dims=(0, 0, None))
 def deformable_softmax_pool(
         labels: torch.Tensor,
         deltas: torch.Tensor,
-        x: torch.Tensor = None,
+        x: Optional[torch.Tensor] = None,
         kernel_size: Sequence[int] = (3, 3),
         temperature: float = 0.05
 ) -> torch.Tensor:
@@ -128,17 +128,17 @@ def deformable_softmax_pool(
         Labels.
     deltas : torch.Tensor
         Displacement vectors.
-    x : torch.Tensor, optional
+    x : Optional[torch.Tensor], optional
         Tensor to be pooled. Default is None.
     kernel_size : Sequence[int], optional
         Kernel size or window size of the softmax pooling operation. Default is (3, 3).
-    temperature : float
+    temperature : float, optional
         Temperature parameter for softmax. Default is 0.05.
 
     Returns
     -------
-    pooled_labels : torch.Tensor
-        Pooled labels.
+    pooled_x : torch.Tensor
+        Pooled tensor.
     """
 
     h, w = labels.shape
@@ -170,9 +170,6 @@ def deformable_softmax_pool(
     pooled_x = (x * weights).sum(dim=0)
 
     return pooled_x
-
-
-vmap_deformable_softmax_pool = torch.vmap(deformable_softmax_pool, in_dims=(0, 0, 0, None, None))
 
 
 def deformable_sum_pool(
@@ -229,7 +226,7 @@ vmap_deformable_sum_pool = torch.vmap(deformable_sum_pool, in_dims=(0, 0, None))
 def peak_local_softmax(
         labels: torch.Tensor,
         kernel_size: Sequence[int] = (3, 3),
-        temperature: float = 0.05,
+        temperature: float = 0.05
 ) -> torch.Tensor:
     
     """Smooth variant of `peak_local_max` with softmax pooling to find peaks in labels.
@@ -240,7 +237,7 @@ def peak_local_softmax(
         Labels.
     kernel_size : Sequence[int], optional
         Kernel size or window size of the softmax pooling operation. Default is (3, 3).
-    temperature : float
+    temperature : float, optional
         Temperature parameter for softmax. Default is 0.05.
 
     Returns
@@ -261,9 +258,6 @@ def peak_local_softmax(
     peaked_labels = labels[center_index] * weights[center_index]
 
     return peaked_labels
-
-
-vmap_peak_local_softmax = torch.vmap(peak_local_softmax, in_dims=(0, None, None))
 
 
 def pad_and_stack(images: Sequence[np.ndarray]) -> np.ndarray:
@@ -287,7 +281,7 @@ def pad_and_stack(images: Sequence[np.ndarray]) -> np.ndarray:
     return stacked_images
 
 
-def pad(images: Sequence[np.ndarray]) -> Sequence[np.ndarray]:
+def pad(images: Sequence[np.ndarray]) -> List[np.ndarray]:
 
     """Pad images to the same size.
 
@@ -298,12 +292,12 @@ def pad(images: Sequence[np.ndarray]) -> Sequence[np.ndarray]:
 
     Returns
     -------
-    padded_images : Sequence[np.ndarray]
+    padded_images : List[np.ndarray]
         List of padded images.
     """
 
     # Compute the padded image size.
-    padded_size = [max([image.shape[i] for image in images]) for i in range(images[0].ndim)]
+    padded_size = tuple(max([image.shape[i] for image in images]) for i in range(images[0].ndim))
 
     # Pad images.
     padded_images = []
@@ -419,7 +413,7 @@ def _match_coords(
         List of matched coordinates.
     """
 
-    # Mean the distances between the ith coordinate and all other coordinates.
+    # Compute the distances between the ith coordinate and all other coordinates.
     distances = np.sqrt(np.sum((coords[i] - coords) ** 2, axis=1))
 
     # Find coordinates within the distance threshold.

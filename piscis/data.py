@@ -7,8 +7,8 @@ from functools import partial
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
-from piscis.utils import pad, remove_duplicate_coords
-from piscis.transforms import adjust, batch_adjust, RandomAugment, voronoi_transform
+from piscis.utils import remove_duplicate_coords
+from piscis.transforms import adjust, batch_adjust, RandomAugment
 
 
 class SpotsDataset(torch.utils.data.Dataset):
@@ -17,9 +17,9 @@ class SpotsDataset(torch.utils.data.Dataset):
 
     Parameters
     ----------
-    x : List[Path]
+    x_paths : List[Path]
         List of image paths.
-    y : List[Path]
+    y_paths : List[Path]
         List of ground truth spot coordinates paths.
     adjustment : Optional[str], optional
         Adjustment type applied to images. Supported types are 'normalize' and 'standardize'. Default is 'standardize'.
@@ -85,7 +85,7 @@ class MultiSpotsDataset(torch.utils.data.Dataset):
         
         return self.epoch_size
 
-    def __getitem__(self, index) -> Tuple[np.ndarray, np.ndarray]:
+    def __getitem__(self, index: Tuple[int, int]) -> Tuple[np.ndarray, np.ndarray]:
 
         dataset_idx, sample_idx = index
 
@@ -111,7 +111,7 @@ class WeightedDatasetSampler(torch.utils.data.Sampler):
             multi_dataset: MultiSpotsDataset,
             num_samples: Optional[int] = None,
             seed: Optional[int] = None
-    ):
+    ) -> None:
 
         self.datasets = multi_dataset.datasets
         self.weights = multi_dataset.weights
@@ -124,7 +124,7 @@ class WeightedDatasetSampler(torch.utils.data.Sampler):
             self.generator.manual_seed(seed)
         self.seed = seed
 
-    def __len__(self):
+    def __len__(self) -> int:
 
         return self.num_samples
 
@@ -217,7 +217,7 @@ class SpotsDataStream(torch.utils.data.IterableDataset):
 
         return worker_id, num_workers
     
-    def __len__(self):
+    def __len__(self) -> int:
 
         _, num_workers = self._get_worker_info()
         num_samples = max(int(np.ceil(len(self.dataset) / num_workers)), self.min_num_samples)
@@ -317,11 +317,6 @@ def get_torch_dataloader(
     -------
     dataloader : torch.utils.data.DataLoader
         Torch dataloader.
-
-    Raises
-    ------
-    ValueError
-        If the dataset is not an instance of SpotsDataset or MultiSpotsDataset.
     """
 
     split = dataset.split
@@ -420,7 +415,7 @@ def get_torch_dataset(
 
 
 def load_datasets(
-        path: str,
+        path: Union[str, Path],
         adjustment: Optional[str] = 'standardize',
         load_train: bool = True,
         load_val: bool = True,
@@ -431,7 +426,7 @@ def load_datasets(
 
     Parameters
     ----------
-    path : str
+    path : Union[str, Path]
         Path to a dataset or directory of datasets.
     adjustment : Optional[str], optional
         Adjustment type applied to images. Supported types are 'normalize' and 'standardize'. Default is 'standardize'.
@@ -470,7 +465,7 @@ def load_datasets(
 
 
 def load_dataset(
-        path: str,
+        path: Union[str, Path],
         adjustment: Optional[str] = 'standardize',
         load_train: bool = True,
         load_val: bool = True,
@@ -481,7 +476,7 @@ def load_dataset(
 
     Parameters
     ----------
-    path : str
+    path : Union[str, Path]
         Path to a dataset.
     adjustment : Optional[str], optional
         Adjustment type applied to images. Supported types are 'normalize' and 'standardize'. Default is 'standardize'.
@@ -531,7 +526,7 @@ def load_dataset(
 
 
 def generate_dataset(
-        path: str,
+        path: Union[str, Path],
         images: List[np.ndarray],
         coords: List[np.ndarray],
         seed: int,
@@ -545,7 +540,7 @@ def generate_dataset(
 
     Parameters
     ----------
-    path : str
+    path : Union[str, Path]
         Path to save dataset.
     images : List[np.ndarray]
         List of images.

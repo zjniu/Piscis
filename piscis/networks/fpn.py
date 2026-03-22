@@ -250,7 +250,7 @@ class Decoder(nn.Module):
         
     def forward(
             self,
-            style: torch.Tensor,
+            style: Optional[torch.Tensor],
             xd: Sequence[torch.Tensor]
     ) -> torch.Tensor:
 
@@ -288,7 +288,7 @@ class FPN(nn.Module):
     out_channels : int
         Number of output channels.
     kernel_size : Union[int, Sequence[int]], optional
-        Size of the convolutional kernel. Default is s3.
+        Size of the convolutional kernel. Default is 3.
     style : bool, optional
         Whether to use style transfer. Default is True.
     bn_momentum : float, optional

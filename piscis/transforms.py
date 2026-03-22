@@ -14,24 +14,10 @@ class RandomAugment:
     ----------
     rng : np.random.Generator
         Random number generator used for generating random transformations.
-    output_size : Optional[Tuple[int, int]]
+    output_size : Tuple[int, int]
         Output size.
-    flips0 : List[bool]
-        List of booleans for flipping along axis 0.
-    flips1 : List[bool]
-        List of booleans for flipping along axis 1.
-    scales : List[float]
-        List of image scales.
-    dxys : List[Tuple[float, float]]
-        List of image translation vectors.
-    thetas : List[float]
-        List of image rotation angles.
-    affines : List[np.ndarray]
-        List of affine transformation matrices.
-    intensity_shifts : List[float]
-        List of image intensity shift values.
-    intensity_scales : List[float]
-        List of image intensity scale factors.
+    augment : bool
+        Whether to apply random augmentations.
     """
 
     def __init__(
@@ -72,8 +58,8 @@ class RandomAugment:
 
         Parameters
         ----------
-        images : np.ndarray
-            Images to transform.
+        image : np.ndarray
+            Image to transform.
         coords : np.ndarray
             Coordinates to transform.
         filter_coords : bool, optional
@@ -173,7 +159,7 @@ def batch_adjust(
         images: Sequence[np.ndarray],
         adjustment: Optional[str],
         **kwargs: Any
-) -> Sequence[np.ndarray]:
+) -> np.ndarray:
 
     """Batch adjust images.
 
@@ -188,7 +174,7 @@ def batch_adjust(
 
     Returns
     -------
-    adjusted_images : Sequence[np.ndarray]
+    adjusted_images : np.ndarray
         Adjusted images.
     """
 

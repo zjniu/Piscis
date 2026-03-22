@@ -1,6 +1,5 @@
 from huggingface_hub import HfFileSystem
-from pathlib import Path
-from typing import Sequence
+from typing import Set
 
 from piscis.paths import HF_DATASETS_DIR, HF_MODELS_DIR, MODELS_DIR
 
@@ -34,13 +33,13 @@ def download_pretrained_model(
         raise ValueError(f"Model {model_name} is not found.")
 
 
-def list_pretrained_models() -> Sequence[str]:
+def list_pretrained_models() -> Set[str]:
 
     """List pretrained models from Hugging Face.
 
     Returns
     -------
-    pretrained_models : Sequence[str]
+    pretrained_models : Set[str]
         List of pretrained model names.
     """
 
@@ -53,8 +52,7 @@ def list_pretrained_models() -> Sequence[str]:
 
 def download_dataset(
         dataset_name: str,
-        path: str,
-        minimal_download: bool = True
+        path: str
 ) -> None:
 
     """Download a dataset from Hugging Face.
@@ -80,17 +78,18 @@ def download_dataset(
         raise ValueError(f"Dataset {dataset_name} is not found.")
 
 
-def list_datasets() -> Sequence[str]:
+def list_datasets() -> Set[str]:
 
     """List datasets from Hugging Face.
 
     Returns
     -------
-    datasets : Sequence[str]
+    datasets : Set[str]
         List of dataset names.
     """
 
     fs = HfFileSystem()
-    datasets = [path.removeprefix(HF_DATASETS_DIR) for path in fs.ls(HF_DATASETS_DIR, detail=False) if fs.isdir(path)]
+    datasets = set(path.removeprefix(HF_DATASETS_DIR)
+                   for path in fs.ls(HF_DATASETS_DIR, detail=False) if fs.isdir(path))
 
     return datasets

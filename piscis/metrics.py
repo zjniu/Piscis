@@ -55,7 +55,7 @@ def compute_metrics(
 
     # Convert `evaluation_metrics` to a tuple if necessary.
     if isinstance(evaluation_metrics, str):
-        evaluation_metrics = (evaluation_metrics,)
+        evaluation_metrics = (evaluation_metrics, )
 
     # Convert `distance_thresholds` to a tuple if necessary.
     if not isinstance(distance_thresholds, Iterable):
@@ -123,7 +123,7 @@ def compute_metrics(
 
 def _compute_metrics(
         distance_matrix: np.ndarray,
-        evaluation_metrics: Union[str, Sequence[str]],
+        evaluation_metrics: Sequence[str],
         distance_threshold: float,
         epsilon: float,
 ) -> Tuple[Dict[str, float], Tuple[np.ndarray, np.ndarray]]:
@@ -134,13 +134,20 @@ def _compute_metrics(
     ----------
     distance_matrix : np.ndarray
         Distance matrix.
-    evaluation_metrics : Union[str, Sequence[str]]
+    evaluation_metrics : Sequence[str]
         Evaluation metric or a list of evaluation metrics. Supported evaluation metrics are 'f1', 'precision', 'recall',
         'tp', 'fp', and 'fn'.
     distance_threshold : float
         Distance threshold for matching predicted and ground truth spot coordinates.
     epsilon : float
         Small constant for numerical stability.
+
+    Returns
+    -------
+    metrics : Dict[str, float]
+        Dictionary of evaluation metrics.
+    coords_matches : Tuple[np.ndarray, np.ndarray]
+        Tuple of row and column indices of the matches.
     """
 
     # Match predicted and ground truth spot coordinates.

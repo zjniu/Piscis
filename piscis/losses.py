@@ -31,10 +31,10 @@ def smoothf1_loss(
         Number of ground truth spots in each image.
     max_distance : float, optional
         Maximum distance for matching predicted and ground truth displacement vectors. Default is 3.
-    temperature : float, optional
-        Temperature parameter for softmax. Default is 0.05.
     kernel_size : Sequence[int], optional
         Kernel size of sum or max pooling operations. Default is (3, 3).
+    temperature : float, optional
+        Temperature parameter for softmax. Default is 0.05.
     epsilon : float, optional
         Small constant for numerical stability. Default is 1e-7.
 
@@ -87,8 +87,8 @@ def masked_l2_loss(
 
     Returns
     -------
-    rmse : jax.Array
-        Masked root-mean-square error.
+    l2 : torch.Tensor
+        Masked L2 loss.
     """
 
     l2 = (torch.linalg.norm(input - target, ord=2, dim=0) * mask).sum() / (mask.sum() + epsilon)
@@ -98,7 +98,7 @@ def masked_l2_loss(
 
 def reduce_loss(
         loss: torch.Tensor,
-        reduction: Optional[str] = 'mean'
+        reduction: str = 'mean'
 ) -> torch.Tensor:
 
     """Reduce the loss.
@@ -107,7 +107,7 @@ def reduce_loss(
     ----------
     loss : torch.Tensor
         Loss tensor to be reduced.
-    reduction : Optional[str], optional
+    reduction : str, optional
         Loss reduction method. Supported methods are 'mean' and 'sum'. Default is 'mean'.
 
     Returns
@@ -136,6 +136,7 @@ def wrap_loss_fn(
         axis: int = 0,
         reduction: Optional[str] = 'mean'
 ) -> Callable:
+    
     """Wrap a loss function for vectorization and loss reduction.
 
     Parameters
@@ -163,7 +164,8 @@ def wrap_loss_fn(
         loss = torch.vmap(loss_fn, in_dims=in_dims)(*args)
 
         # Reduce the loss.
-        loss = reduce_loss(loss, reduction=reduction)
+        if reduction:
+            loss = reduce_loss(loss, reduction=reduction)
 
         return loss
 

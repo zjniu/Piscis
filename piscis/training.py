@@ -35,7 +35,7 @@ def loss_fn(
         Predicted labels.
     deltas_pred : torch.Tensor
         Predicted displacement vectors.
-    labels: torch.Tensor
+    labels : torch.Tensor
         Ground truth labels.
     deltas : torch.Tensor
         Ground truth displacement vectors.
@@ -45,10 +45,10 @@ def loss_fn(
         Weight for the masked L2 loss term in the overall loss function.
     max_distance : float
         Maximum distance for matching predicted and ground truth displacement vectors.
-    kernel_size : Sequence[int], optional
-        Kernel size of sum or max pooling operations. Default is (3, 3).
+    kernel_size : Sequence[int]
+        Kernel size of sum or max pooling operations.
     temperature : float
-        Temperature parameter.
+        Temperature parameter for softmax.
     epsilon : float
         Small constant for numerical stability.
 
@@ -80,7 +80,7 @@ def loss_fn(
 
 def train_epoch(
         model: SpotsModel,
-        dataloader: tqdm,
+        dataloader: tqdm[torch.utils.data.DataLoader],
         optimizer: torch.optim.Optimizer,
         l2_loss_weight: float,
         dilation_iterations: int,
@@ -96,14 +96,14 @@ def train_epoch(
     ----------
     model : SpotsModel
         Model to be trained.
-    dataloader : tqdm
+    dataloader : tqdm[torch.utils.data.DataLoader]
         DataLoader for the training data.
     optimizer : torch.optim.Optimizer
         Optimizer for updating model parameters.
     l2_loss_weight : float
         Weight for the masked L2 loss term in the overall loss function.
     dilation_iterations : int
-        Number of iterations to dilate ground truth labels
+        Number of iterations to dilate ground truth labels.
     max_distance : float
         Maximum distance for matching predicted and ground truth displacement vectors.
     temperature : float
@@ -173,7 +173,7 @@ def val_epoch(
     l2_loss_weight : float
         Weight for the masked L2 loss term in the overall loss function.
     dilation_iterations : int
-        Number of iterations to dilate ground truth labels
+        Number of iterations to dilate ground truth labels.
     max_distance : float
         Maximum distance for matching predicted and ground truth displacement vectors.
     temperature : float
@@ -301,11 +301,11 @@ def train_model(
     """
 
     if warmup_fraction + decay_fraction > 1:
-        raise ValueError("warmup_fraction + decay_fraction cannot be greater 1.")
+        raise ValueError("warmup_fraction + decay_fraction cannot be greater than 1.")
     
     # Split random seed.
     sq = np.random.SeedSequence(random_seed)
-    child_seeds = sq.generate_state(4, dtype=np.uint32)
+    child_seeds = sq.generate_state(3, dtype=np.uint32)
 
     # Round the input image size.
     input_size = round_input_size(input_size)
@@ -319,7 +319,7 @@ def train_model(
     channels = next(iter(train_dataloader))[0][0].shape[0]
 
     # Create the model.
-    torch.manual_seed(child_seeds[2])
+    torch.manual_seed(int(child_seeds[2]))
     kernel_size = (2 * dilation_iterations + 1, ) * 2
     model = SpotsModel(in_channels=channels, pooling='max', kernel_size=kernel_size).to(device)
 

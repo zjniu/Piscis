@@ -84,7 +84,7 @@ class EfficientNetV2(nn.Module):
         Number of input channels.
     stem_stride : int
         Stride of the stem convolution.
-    blocks_args : Sequence
+    blocks_args : Sequence[Dict[str, Any]]
         List of arguments to construct block modules.
     stochastic_depth_prob : float
         Stochastic depth probability.
@@ -94,7 +94,7 @@ class EfficientNetV2(nn.Module):
         Convolution module.
     bn : ModuleDef
         Batch norm module.
-    act : Callable
+    act : ModuleDef
         Activation function.
     """
 
@@ -102,12 +102,12 @@ class EfficientNetV2(nn.Module):
             self,
             in_channels: int,
             stem_stride: int,
-            blocks_args: Sequence,
+            blocks_args: Sequence[Dict[str, Any]],
             stochastic_depth_prob: float,
             bn_momentum: float,
-            conv: ModuleDef = nn.Conv2d,
-            bn: ModuleDef = nn.BatchNorm2d,
-            act: ModuleDef = nn.SiLU
+            conv: ModuleDef,
+            bn: ModuleDef,
+            act: ModuleDef
     ) -> None:
         
         super().__init__()
@@ -213,7 +213,7 @@ def build_efficientnetv2(
         conv: ModuleDef = nn.Conv2d,
         bn: ModuleDef = nn.BatchNorm2d,
         act: ModuleDef = nn.SiLU
-) -> partial:
+) -> partial[EfficientNetV2]:
 
     """Build EfficientNetV2 architecture.
 
@@ -244,14 +244,13 @@ def build_efficientnetv2(
 
     Returns
     -------
-    model : partial
+    model : partial[EfficientNetV2]
         EfficientNetV2 architecture.
     """
 
     blocks_args = copy.deepcopy(blocks_args)
 
     long_blocks_args = []
-    b = 0
     for block_args in blocks_args:
 
         long_block_args = []
@@ -285,8 +284,6 @@ def build_efficientnetv2(
                 block_args['in_channels'] = block_args['out_channels']
 
             long_block_args.append(block_args.copy())
-
-            b += 1
 
         long_blocks_args.append(long_block_args)
 

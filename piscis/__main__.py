@@ -9,7 +9,7 @@ from piscis import Piscis
 from piscis.training import train_model
 
 
-def main():
+def main() -> None:
 
     """Main function for the Piscis command-line interface."""
 
@@ -36,10 +36,12 @@ def main():
                                 help="Spot detection threshold.")
     predict_parser.add_argument('--min-distance', type=int, default=1,
                                 help="Minimum distance between spots.")
+    predict_parser.add_argument('--device', type=str, default='cuda',
+                                help="Device to run the model on.")
 
     # Train subparser.
     train_parser = subparsers.add_parser('train', formatter_class=formatter_class,
-                                         help="Train a SpotsModel")
+                                         help="Train a SpotsModel.")
     train_parser.add_argument('model_name', type=str,
                               help="Model name.")
     train_parser.add_argument('dataset_path', type=str,
@@ -82,7 +84,7 @@ def main():
                               help="Temperature parameter for softmax.")
     train_parser.add_argument('--epsilon', type=float, default=1e-7,
                               help="Small constant for numerical stability.")
-    train_parser.add_argument('--checkpoint_every', type=int, default=10,
+    train_parser.add_argument('--checkpoint-every', type=int, default=10,
                               help="Number of epochs between saving model checkpoints.")
     train_parser.add_argument('--device', type=str, default='cuda',
                               help="Device for training.")
@@ -133,7 +135,7 @@ def main():
             image_paths.append(input_path)
 
         # Create the Piscis model.
-        model = Piscis(model_name=args.model_name, batch_size=args.batch_size, input_size=None)
+        model = Piscis(model_name=args.model_name, batch_size=args.batch_size, input_size=None, device=args.device)
 
         # Loop over image paths.
         for image_path in tqdm(image_paths):
