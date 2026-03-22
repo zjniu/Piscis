@@ -117,8 +117,8 @@ class RandomAugment:
 
         image_center = (image.shape[1] / 2, image.shape[0] / 2)
         affine = cv.getRotationMatrix2D(image_center, float(theta * 180 / np.pi), float(scale))
-        affine[:, 2] += np.array(self.output_size) / 2 - np.array(image_center) + dxy
-        image = cv.warpAffine(image, M=affine, dsize=self.output_size, flags=cv.INTER_LINEAR)
+        affine[:, 2] += np.array([self.output_size[1], self.output_size[0]]) / 2 - np.array(image_center) + dxy
+        image = cv.warpAffine(image, M=affine, dsize=(self.output_size[1], self.output_size[0]), flags=cv.INTER_LINEAR)
         coords = np.concatenate((np.flip(coords, axis=1), np.ones((len(coords), 1))), axis=1)
         coords = np.flip((coords @ affine.T), axis=1)
 
