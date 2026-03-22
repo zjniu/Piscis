@@ -151,8 +151,12 @@ def main() -> None:
                 intermediates=False
             )
 
-            # Save the predicted spots to a CSV file.
-            np.savetxt(output_path / f'{image_path.stem}.csv', coords, delimiter=',')
+            # Save the predicted spots.
+            if coords.dtype == object:
+                for i, coord in enumerate(coords):
+                    np.savetxt(output_path / f'{image_path.stem}_{i}.csv', coord, delimiter=',')
+            else:
+                np.savetxt(output_path / f'{image_path.stem}.csv', coords, delimiter=',')
 
     else:
 
