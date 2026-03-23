@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 
 from functools import partial
-from typing import Sequence, Tuple, Union
+from typing import Optional, Sequence, Tuple, Union
 
 from piscis.networks.efficientnetv2 import build_efficientnetv2
 from piscis.networks.fpn import FPN
@@ -119,7 +119,7 @@ class SpotsModel(nn.Module):
             self,
             x: torch.Tensor,
             return_style: bool = False
-    ) -> Union[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
+    ) -> Union[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]]:
 
         x, style = self.fpn(x)
         labels = self.sigmoid(x[:, 0])
