@@ -16,7 +16,7 @@ def smoothf1_loss(
         temperature: float = 0.05,
         epsilon: float = 1e-7
 ) -> torch.Tensor:
-    
+
     """Compute the SmoothF1 loss.
 
     Parameters
@@ -136,7 +136,7 @@ def wrap_loss_fn(
         axis: int = 0,
         reduction: Optional[str] = 'mean'
 ) -> Callable:
-    
+
     """Wrap a loss function for vectorization and loss reduction.
 
     Parameters

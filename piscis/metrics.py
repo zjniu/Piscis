@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 
 from scipy import integrate, optimize, spatial
-from typing import Dict, Iterable, Optional, Sequence, Tuple, Union
+from typing import Dict, Sequence, Tuple, Union
 
 
 def compute_metrics(
@@ -10,7 +10,7 @@ def compute_metrics(
         coords: np.ndarray,
         evaluation_metrics: Union[str, Sequence[str]] = 'f1',
         distance_metric: str = 'euclidean',
-        distance_thresholds: Union[float, Iterable] = 1.0,
+        distance_thresholds: Union[float, Sequence[float], np.ndarray] = 1.0,
         epsilon: float = 1e-7,
         return_df: bool = False
 ) -> Union[Dict[str, float], Tuple[Dict[str, float], pd.DataFrame]]:
@@ -29,7 +29,7 @@ def compute_metrics(
     distance_metric : str, optional
         Distance metric used to compute the distances between predicted and ground truth spot coordinates. Default is
         'euclidean'.
-    distance_thresholds : Union[float, Iterable], optional
+    distance_thresholds : Union[float, Sequence[float], np.ndarray], optional
         Distance threshold or a list of distance thresholds for matching predicted and ground truth spot coordinates.
         Default is 1.0.
     epsilon : float, optional
@@ -58,7 +58,7 @@ def compute_metrics(
         evaluation_metrics = (evaluation_metrics, )
 
     # Convert `distance_thresholds` to a tuple if necessary.
-    if not isinstance(distance_thresholds, Iterable):
+    if not isinstance(distance_thresholds, (Sequence, np.ndarray)):
         distance_thresholds = (distance_thresholds, )
 
     # Create empty lists.

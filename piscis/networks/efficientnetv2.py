@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 
 from functools import partial
-from typing import Any, Dict, Optional, Sequence, Union
+from typing import Any, Callable, Dict, Optional, Sequence, Union
 
 from piscis.networks.conv import ConvBatchAct, MBConv, FusedMBConv
 from piscis.networks.efficientnetv2_defaults import DEFAULT_BLOCKS_ARGS
@@ -44,7 +44,6 @@ def round_features(
         minimum_depth,
         int(features + depth_divisor / 2) // depth_divisor * depth_divisor,
     )
-    new_features = int(new_features)
 
     return new_features
 
@@ -69,7 +68,7 @@ def round_repeats(
         Rounded number of repeats.
     """
 
-    new_repeats = int(math.ceil(depth_coefficient * repeats))
+    new_repeats = math.ceil(depth_coefficient * repeats)
 
     return new_repeats
 
@@ -84,7 +83,7 @@ class EfficientNetV2(nn.Module):
         Number of input channels.
     stem_stride : int
         Stride of the stem convolution.
-    blocks_args : Sequence[Dict[str, Any]]
+    blocks_args : Sequence[Sequence[Dict[str, Any]]]
         List of arguments to construct block modules.
     stochastic_depth_prob : float
         Stochastic depth probability.
@@ -102,7 +101,7 @@ class EfficientNetV2(nn.Module):
             self,
             in_channels: int,
             stem_stride: int,
-            blocks_args: Sequence[Dict[str, Any]],
+            blocks_args: Sequence[Sequence[Dict[str, Any]]],
             stochastic_depth_prob: float,
             bn_momentum: float,
             conv: ModuleDef,
@@ -213,7 +212,7 @@ def build_efficientnetv2(
         conv: ModuleDef = nn.Conv2d,
         bn: ModuleDef = nn.BatchNorm2d,
         act: ModuleDef = nn.SiLU
-) -> partial[EfficientNetV2]:
+) -> Callable[..., EfficientNetV2]:
 
     """Build EfficientNetV2 architecture.
 
@@ -244,7 +243,7 @@ def build_efficientnetv2(
 
     Returns
     -------
-    model : partial[EfficientNetV2]
+    model : Callable[..., EfficientNetV2]
         EfficientNetV2 architecture.
     """
 

@@ -228,7 +228,7 @@ def peak_local_softmax(
         kernel_size: Sequence[int] = (3, 3),
         temperature: float = 0.05
 ) -> torch.Tensor:
-    
+
     """Smooth variant of `peak_local_max` with softmax pooling to find peaks in labels.
 
     Parameters

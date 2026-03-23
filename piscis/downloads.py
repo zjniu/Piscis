@@ -72,7 +72,7 @@ def download_dataset(
 
     fs = HfFileSystem()
     hf_dataset_path = f'{HF_DATASETS_DIR}{dataset_name}'
-    if fs.exists(hf_dataset_path) and ('/' not in dataset_name):
+    if ('/' not in dataset_name) and fs.exists(hf_dataset_path):
         fs.download(hf_dataset_path, str(path), recursive=True)
     else:
         raise ValueError(f"Dataset {dataset_name} is not found.")

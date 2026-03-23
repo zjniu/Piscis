@@ -295,9 +295,9 @@ def get_torch_dataloader(
         batch_size: int = 4,
         num_workers: int = 4,
         seed: int = 0,
-        *args, **kwargs
+        **kwargs
 ) -> torch.utils.data.DataLoader:
-    
+
     """Get a Torch dataloader from a dataset.
 
     Parameters
@@ -333,7 +333,7 @@ def get_torch_dataloader(
 
     dataloader = torch.utils.data.DataLoader(datastream, batch_size=batch_size, num_workers=num_workers,
                                              collate_fn=lambda x: list(map(list, zip(*x))), drop_last=drop_last,
-                                             persistent_workers=num_workers > 0, *args, **kwargs)
+                                             persistent_workers=num_workers > 0, **kwargs)
 
     return dataloader
 
@@ -345,7 +345,7 @@ def get_torch_dataset(
         load_val: bool = True,
         load_test: bool = False,
 ) -> Dict:
-    
+
     """Get a Torch dataset from a directory.
 
     Parameters
@@ -370,7 +370,7 @@ def get_torch_dataset(
         Torch dataset.
     """
 
-    # Intialize lists.
+    # Initialize lists.
     subdatasets = []
     weights = None
 
@@ -421,7 +421,7 @@ def load_datasets(
         load_val: bool = True,
         load_test: bool = True
 ) -> Dict:
-    
+
     """Load datasets from a directory.
 
     Parameters
@@ -493,7 +493,7 @@ def load_dataset(
         Dataset dictionary.
     """
 
-    # Intialize dataset dictionary.
+    # Initialize dataset dictionary.
     dataset = {}
 
     # Get dataset paths.

@@ -52,7 +52,7 @@ class _Piscis:
             pooling: str
     ) -> None:
 
-        """Initialize a Piscis object.
+        """Initialize a base Piscis object.
 
         Parameters
         ----------
@@ -79,7 +79,7 @@ class _Piscis:
             else:
                 download_pretrained_model(model_name)
         with open(model_path, 'rb') as f_model:
-            state_dict = torch.load(f_model, map_location='cpu')
+            state_dict = torch.load(f_model, map_location='cpu', weights_only=True)
             metadata = state_dict.pop('metadata')
             self.adjustment = metadata['adjustment']
             if input_size is None:
@@ -688,7 +688,7 @@ def adjust_parameters(
         threshold: float = 0.5,
         min_distance: int = 1
 ) -> np.ndarray:
-    
+
     """Adjust tunable parameters for a given set of intermediate feature maps.
 
     Parameters

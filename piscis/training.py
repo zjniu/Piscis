@@ -26,7 +26,7 @@ def loss_fn(
         temperature: float,
         epsilon: float
 ) -> Tuple[torch.Tensor, Dict[str, float]]:
-    
+
     """Computes the loss and metrics for a given batch.
 
     Parameters
@@ -80,7 +80,7 @@ def loss_fn(
 
 def train_epoch(
         model: SpotsModel,
-        dataloader: tqdm[torch.utils.data.DataLoader],
+        dataloader: tqdm,
         optimizer: torch.optim.Optimizer,
         l2_loss_weight: float,
         dilation_iterations: int,
@@ -96,7 +96,7 @@ def train_epoch(
     ----------
     model : SpotsModel
         Model to be trained.
-    dataloader : tqdm[torch.utils.data.DataLoader]
+    dataloader : tqdm
         DataLoader for the training data.
     optimizer : torch.optim.Optimizer
         Optimizer for updating model parameters.
@@ -371,7 +371,7 @@ def train_model(
 
         # Load the last checkpoint if available.
         print(f'Loading the last checkpoint from {last_checkpoint_path}...')
-        checkpoint = torch.load(last_checkpoint_path, map_location='cpu')
+        checkpoint = torch.load(last_checkpoint_path, map_location='cpu', weights_only=True)
         last_epoch = checkpoint['epoch']
         train_dataloader.dataset.set_epoch(last_epoch + 1)
         model.load_state_dict(checkpoint['model_state_dict'])
@@ -394,15 +394,14 @@ def train_model(
                 else:
                     download_pretrained_model(initial_model_name)
             print(f'Initializing model weights from {initial_model_path}...')
-            with open(initial_model_path, 'rb') as f_model:
-                state_dict = torch.load(f_model, map_location='cpu')
-                state_dict.pop('metadata')
-                first_layer = state_dict['fpn.encoder.stem.conv.0.weight']
-                if (first_layer.shape[1] == 1) and (channels > 1):
-                    state_dict['fpn.encoder.stem.conv.0.weight'] = torch.cat([first_layer] * channels, dim=1)
-                if first_layer.shape[1] > channels:
-                    state_dict['fpn.encoder.stem.conv.0.weight'] = first_layer[:, :channels, :, :]
-                model.load_state_dict(state_dict)
+            state_dict = torch.load(initial_model_path, map_location='cpu', weights_only=True)
+            state_dict.pop('metadata')
+            first_layer = state_dict['fpn.encoder.stem.conv.0.weight']
+            if (first_layer.shape[1] == 1) and (channels > 1):
+                state_dict['fpn.encoder.stem.conv.0.weight'] = torch.cat([first_layer] * channels, dim=1)
+            if first_layer.shape[1] > channels:
+                state_dict['fpn.encoder.stem.conv.0.weight'] = first_layer[:, :channels, :, :]
+            model.load_state_dict(state_dict)
 
         # Create list for storing metrics.
         metrics_log = []
@@ -482,9 +481,9 @@ def train_model(
 
     # Save the best model.
     if best_checkpoint_path.is_file():
-        state_dict = torch.load(best_checkpoint_path, map_location='cpu')['model_state_dict']
+        state_dict = torch.load(best_checkpoint_path, map_location='cpu', weights_only=True)['model_state_dict']
     else:
-        state_dict = torch.load(last_checkpoint_path, map_location='cpu')['model_state_dict']
+        state_dict = torch.load(last_checkpoint_path, map_location='cpu', weights_only=True)['model_state_dict']
     state_dict['metadata'] = {
         'adjustment': adjustment,
         'input_size': input_size,

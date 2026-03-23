@@ -128,7 +128,7 @@ def main() -> None:
         # Get a list of image paths.
         image_paths = []
         if input_path.is_dir():
-            for path in input_path.glob("*"):
+            for path in sorted(input_path.glob('*')):
                 if path.is_file():
                     image_paths.append(path)
         else:
@@ -152,7 +152,7 @@ def main() -> None:
             )
 
             # Save the predicted spots.
-            if coords.dtype == object:
+            if coords.dtype.kind == 'O':
                 for i, coord in enumerate(coords):
                     np.savetxt(output_path / f'{image_path.stem}_{i}.csv', coord, delimiter=',')
             else:

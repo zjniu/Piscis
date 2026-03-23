@@ -3,16 +3,16 @@ import tifffile
 import torch
 
 from pathlib import Path
-from typing import Dict, Optional, Union
+from typing import Any, Dict, Optional, Union
 
 from piscis.paths import MODELS_DIR
 
 
 def convert_jax_to_torch_state_dict(
         jax_model_name: str,
-        state_dict: Optional[Dict] = None,
+        state_dict: Optional[Dict[str, Any]] = None,
         verbose: bool = False
-) -> Dict:
+) -> Dict[str, Any]:
 
     """Convert Piscis JAX model weights to PyTorch state dict.
 
@@ -20,14 +20,14 @@ def convert_jax_to_torch_state_dict(
     ----------
     jax_model_name : str
         JAX model name.
-    state_dict : Optional[Dict], optional
+    state_dict : Optional[Dict[str, Any]], optional
         Template state dict from PyTorch model. Default is None.
     verbose : bool, optional
         Whether to print conversion progress. Default is False.
 
     Returns
     -------
-    state_dict : Dict
+    state_dict : Dict[str, Any]
         PyTorch state dict with converted weights.
 
     Raises
@@ -53,7 +53,6 @@ def convert_jax_to_torch_state_dict(
     else:
         check_shapes = True
     metadata = {}
-    state_dict['metadata'] = metadata
 
     # Load JAX model.
     model_path = MODELS_DIR / jax_model_name
@@ -67,6 +66,7 @@ def convert_jax_to_torch_state_dict(
         metadata['input_size'] = input_size
         metadata['dilation_iterations'] = jax_dict.get('dilation_iterations', None)
         metadata['channels'] = jax_dict.get('channels', 1)
+    state_dict['metadata'] = metadata
 
     # Map EfficientNetV2 encoder weights.
     encoder_mapping = {}
