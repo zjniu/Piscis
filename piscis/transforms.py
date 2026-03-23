@@ -113,7 +113,11 @@ class RandomAugment:
 
             scale = 1
             dxy = np.array([0, 0])
-            theta = self.rng.choice((0, np.pi / 2, np.pi, 3 * np.pi / 2))
+
+            if self.augment:
+                theta = self.rng.choice((0, np.pi / 2, np.pi, 3 * np.pi / 2))
+            else:
+                theta = 0
 
         image_center = (image.shape[1] / 2, image.shape[0] / 2)
         affine = cv.getRotationMatrix2D(image_center, float(theta * 180 / np.pi), float(scale))
@@ -295,7 +299,7 @@ def batch_voronoi_transform(
         dilation_iterations: int = 1,
         device: Optional[str] = None
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    
+
     """Batch Voronoi transform.
 
     Parameters
