@@ -107,7 +107,7 @@ class RandomAugment:
             dxy = self.rng.uniform(-dxy / 2, dxy / 2, size=2)
 
             # Random rotation.
-            theta = 2 * np.pi * self.rng.uniform()
+            theta = 360 * self.rng.uniform()
 
         else:
 
@@ -115,12 +115,12 @@ class RandomAugment:
             dxy = np.array([0, 0])
 
             if self.augment:
-                theta = self.rng.choice((0, np.pi / 2, np.pi, 3 * np.pi / 2))
+                theta = self.rng.choice((0, 90, 180, 270))
             else:
                 theta = 0
 
         image_center = (image.shape[1] / 2, image.shape[0] / 2)
-        affine = cv.getRotationMatrix2D(image_center, float(theta * 180 / np.pi), float(scale))
+        affine = cv.getRotationMatrix2D(image_center, theta, float(scale))
         affine[:, 2] += np.array([self.output_size[1], self.output_size[0]]) / 2 - np.array(image_center) + dxy
         image = cv.warpAffine(image, M=affine, dsize=(self.output_size[1], self.output_size[0]), flags=cv.INTER_LINEAR)
         coords = np.concatenate((np.flip(coords, axis=1), np.ones((len(coords), 1))), axis=1)
