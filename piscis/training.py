@@ -87,7 +87,7 @@ def train_epoch(
         max_distance: float,
         temperature: float,
         epsilon: float,
-        device: Optional[str]
+        device: Optional[Union[str, torch.device]]
 ) -> Dict[str, float]:
 
     """Train the model for a single epoch.
@@ -110,7 +110,7 @@ def train_epoch(
         Temperature parameter for softmax.
     epsilon : float
         Small constant for numerical stability.
-    device : Optional[str]
+    device : Optional[Union[str, torch.device]]
         Device for training.
 
     Returns
@@ -159,7 +159,7 @@ def val_epoch(
         max_distance: float,
         temperature: float,
         epsilon: float,
-        device: Optional[str]
+        device: Optional[Union[str, torch.device]]
 ) -> Dict[str, float]:
 
     """Validate the model for a single epoch.
@@ -180,7 +180,7 @@ def val_epoch(
         Temperature parameter for softmax.
     epsilon : float
         Small constant for numerical stability.
-    device : Optional[str]
+    device : Optional[Union[str, torch.device]]
         Device for training.
 
     Returns
@@ -238,7 +238,7 @@ def train_model(
         temperature: float = 0.05,
         epsilon: float = 1e-7,
         checkpoint_every: int = 10,
-        device: Optional[str] = 'cuda'
+        device: Optional[Union[str, torch.device]] = 'cuda'
 ) -> None:
 
     """Train a SpotsModel.
@@ -291,7 +291,7 @@ def train_model(
         Small constant for numerical stability. Default is 1e-7.
     checkpoint_every : int, optional
         Number of epochs between saving model checkpoints. Default is 10.
-    device : Optional[str], optional
+    device : Optional[Union[str, torch.device]], optional
         Device for training. Default is 'cuda'.
 
     Raises

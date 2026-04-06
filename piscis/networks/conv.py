@@ -8,6 +8,7 @@ from typing import Any, Optional, Sequence, Union
 
 ModuleDef = Any
 
+
 class Conv(nn.Module):
 
     """Convolutional block with batch norm and activation.
