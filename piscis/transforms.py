@@ -382,6 +382,11 @@ def voronoi_transform(
     .. [1] Laubscher, Emily, et al. "vanvalenlab/deepcell-spots: Deep Learning Library for Spot Detection." GitHub,
            https://github.com/vanvalenlab/deepcell-spots.
     """
+
+    if len(coords) == 0:
+        labels = torch.zeros(output_size, dtype=torch.bool, device=device)
+        deltas = torch.full((2, *output_size), float(max(output_size)), dtype=torch.float, device=device)
+        return labels, deltas
     
     # Generate the labels tensor.
     rounded_coords = np.rint(coords).astype(int)

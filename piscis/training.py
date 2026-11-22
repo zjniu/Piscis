@@ -8,10 +8,16 @@ from typing import Dict, List, Optional, Sequence, Tuple, Union
 from piscis.convert import convert_jax_to_torch_state_dict
 from piscis.data import get_torch_dataset, get_torch_dataloader
 from piscis.downloads import download_pretrained_model
-from piscis.losses import mean_masked_l2_loss, mean_smoothf1_loss
+from piscis.losses import masked_l2_loss, smoothf1_loss, wrap_loss_fn
 from piscis.models.spots import round_input_size, SpotsModel
 from piscis.paths import CHECKPOINTS_DIR, MODELS_DIR
 from piscis.transforms import batch_voronoi_transform
+
+
+mean_smoothf1_loss = wrap_loss_fn(smoothf1_loss, axis=0, reduction='mean')
+mean_masked_l2_loss = wrap_loss_fn(masked_l2_loss, axis=0, reduction='mean')
+sum_smoothf1_loss = wrap_loss_fn(smoothf1_loss, axis=0, reduction='sum')
+sum_masked_l2_loss = wrap_loss_fn(masked_l2_loss, axis=0, reduction='sum')
 
 
 def loss_fn(
@@ -24,7 +30,8 @@ def loss_fn(
         max_distance: float,
         kernel_size: Sequence[int],
         temperature: float,
-        epsilon: float
+        epsilon: float,
+        reduction: str = 'mean'
 ) -> Tuple[torch.Tensor, Dict[str, float]]:
 
     """Computes the loss and metrics for a given batch.
@@ -51,6 +58,8 @@ def loss_fn(
         Temperature parameter for softmax.
     epsilon : float
         Small constant for numerical stability.
+    reduction : str, optional
+        Loss reduction method. Default is 'mean'.
 
     Returns
     -------
@@ -58,12 +67,24 @@ def loss_fn(
         Overall loss value.
     metrics : Dict[str, float]
         Dictionary containing the values of individual loss terms and the overall loss.
+    
+    Raises
+    ------
+    ValueError
+        If the `reduction` method is not supported.
     """
 
     # Compute SmoothF1 loss and L2 loss.
-    smoothf1 = mean_smoothf1_loss(labels_pred, deltas_pred, deltas, p,
-                                  max_distance, kernel_size, temperature, epsilon)
-    l2 = mean_masked_l2_loss(deltas_pred, deltas, labels, epsilon)
+    if reduction == 'mean':
+        smoothf1 = mean_smoothf1_loss(labels_pred, deltas_pred, deltas, p,
+                                      max_distance, kernel_size, temperature, epsilon)
+        l2 = mean_masked_l2_loss(deltas_pred, deltas, labels, epsilon)
+    elif reduction == 'sum':
+        smoothf1 = sum_smoothf1_loss(labels_pred, deltas_pred, deltas, p,
+                                     max_distance, kernel_size, temperature, epsilon)
+        l2 = sum_masked_l2_loss(deltas_pred, deltas, labels, epsilon)
+    else:
+        raise ValueError("Reduction method is not supported.")
 
     # Combine losses.
     loss = smoothf1 + l2_loss_weight * l2
@@ -137,7 +158,7 @@ def train_epoch(
         optimizer.zero_grad()
         labels_pred, deltas_pred = model(x)
         loss, metrics = loss_fn(labels_pred, deltas_pred, labels, deltas, p, l2_loss_weight,
-                                max_distance, model.kernel_size, temperature, epsilon)
+                                max_distance, model.kernel_size, temperature, epsilon, reduction='mean')
         loss.backward()
         optimizer.step()
         running_metrics = {k: running_metrics.get(k, 0.0) + metrics[k] for k in metrics}
@@ -191,6 +212,7 @@ def val_epoch(
 
     # Initialize dictionary for running metrics.
     running_metrics = {}
+    total_samples = 0
 
     # Set model to eval mode.
     model.eval()
@@ -208,10 +230,11 @@ def val_epoch(
             # Validate the model on the batch.
             labels_pred, deltas_pred = model(x)
             _, metrics = loss_fn(labels_pred, deltas_pred, labels, deltas, p, l2_loss_weight,
-                                 max_distance, model.kernel_size, temperature, epsilon)
+                                 max_distance, model.kernel_size, temperature, epsilon, reduction='sum')
             running_metrics = {k: running_metrics.get(k, 0.0) + metrics[k] for k in metrics}
+            total_samples += x.shape[0]
 
-    val_metrics = {f'val_{k}': v / len(dataloader) for k, v in running_metrics.items()}
+    val_metrics = {f'val_{k}': v / total_samples for k, v in running_metrics.items()}
 
     return val_metrics
 

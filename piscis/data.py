@@ -152,8 +152,6 @@ class SpotsDataStream(torch.utils.data.IterableDataset):
         Current epoch. Default is 1.
     seed : int, optional
         Random seed. Default is 0.
-    shuffle : bool, optional
-        Whether to shuffle the dataset. Default is True.
     augment_cls : Optional[Callable], optional
         Augmentation class. Default is None.
     """
@@ -164,7 +162,6 @@ class SpotsDataStream(torch.utils.data.IterableDataset):
             min_num_samples: int,
             epoch: int = 1,
             seed: int = 0,
-            shuffle: bool = True,
             augment_cls: Optional[Callable] = None
     ) -> None:
 
@@ -172,9 +169,7 @@ class SpotsDataStream(torch.utils.data.IterableDataset):
         self.min_num_samples = min_num_samples
         self.epoch = epoch
         self.seed = seed
-        self.shuffle = shuffle
         self.augment_cls = augment_cls
-        self.cached_indices = None
 
     def set_epoch(self, epoch: int) -> None:
         
@@ -187,17 +182,13 @@ class SpotsDataStream(torch.utils.data.IterableDataset):
     def _make_sampler(
             self,
             sampler_seed: int,
-            worker_id: int,
-            num_workers: int
+            worker_id: int
     ) -> Union[torch.utils.data.Sampler, range]:
 
         if isinstance(self.dataset, (SpotsDataset, torch.utils.data.ConcatDataset)):
-            if self.shuffle:
-                worker_seed = sampler_seed + worker_id
-                generator = torch.Generator().manual_seed(worker_seed)
-                sampler = torch.utils.data.RandomSampler(self.dataset, num_samples=len(self.dataset), generator=generator)
-            else:
-                sampler = range(worker_id, len(self.dataset), num_workers)
+            worker_seed = sampler_seed + worker_id
+            generator = torch.Generator().manual_seed(worker_seed)
+            sampler = torch.utils.data.RandomSampler(self.dataset, num_samples=len(self.dataset), generator=generator)
         elif isinstance(self.dataset, MultiSpotsDataset):
             worker_seed = sampler_seed + worker_id
             sampler = WeightedDatasetSampler(self.dataset, num_samples=len(self.dataset), seed=worker_seed)
@@ -206,28 +197,15 @@ class SpotsDataStream(torch.utils.data.IterableDataset):
 
         return sampler
     
-    @staticmethod
-    def _get_worker_info() -> Tuple[int, int]:
 
+    def __iter__(self):
+
+        # Get worker info.
         info = torch.utils.data.get_worker_info()
         if info is None:
             worker_id, num_workers = 0, 1
         else:
             worker_id, num_workers = info.id, info.num_workers
-
-        return worker_id, num_workers
-    
-    def __len__(self) -> int:
-
-        _, num_workers = self._get_worker_info()
-        num_samples = max(int(np.ceil(len(self.dataset) / num_workers)), self.min_num_samples)
-
-        return num_samples
-
-    def __iter__(self):
-
-        # Get worker info.
-        worker_id, num_workers = self._get_worker_info()
         num_samples = max(int(np.ceil(len(self.dataset) / num_workers)), self.min_num_samples)
 
         # Get random seeds.
@@ -242,51 +220,68 @@ class SpotsDataStream(torch.utils.data.IterableDataset):
         else:
             augment = None
 
-        if self.cached_indices is None:
+        # Make sampler.
+        sampler = self._make_sampler(sampler_seed, worker_id)
+        iterator = iter(sampler)
+        
+        # Yield samples.
+        i = 0
+        yielded = 0
+        while yielded < num_samples:
 
-            # Make sampler.
-            sampler = self._make_sampler(sampler_seed, worker_id, num_workers)
-            iterator = iter(sampler)
-            
-            # Yield samples.
-            i = 0
-            yielded = 0
-            cached_indices = []
-            while yielded < num_samples:
+            if i >= len(sampler):
+                iterator = iter(sampler)
+                i = 0
 
-                if i >= len(sampler):
-                    iterator = iter(sampler)
-                    i = 0
+            index = next(iterator)
+            i += 1
 
-                index = next(iterator)
-                i += 1
+            x, y = self.dataset[index]
+            if augment:
+                x, y = augment.apply(x, y)
+            if len(y) == 0:
+                continue
+            yielded += 1
 
-                x, y = self.dataset[index]
-                if augment:
-                    x, y = augment.apply(x, y)
-                if len(y) == 0:
-                    continue
-                if not self.shuffle:
-                    cached_indices.append(index)
-                yielded += 1
-
-                yield x, y
-
-            # Cache indices if not shuffling.
-            if not self.shuffle:
-                self.cached_indices = cached_indices
-
-        else:
-            
-            for index in self.cached_indices:
-                x, y = self.dataset[index]
-                if augment:
-                    x, y = augment.apply(x, y)
-                yield x, y
+            yield x, y
 
         # Bump epoch.
-        if self.shuffle:
-            self.next_epoch()
+        self.next_epoch()
+
+
+class SpotsMapDataset(torch.utils.data.Dataset):
+
+    """Map-style spot detection dataset.
+
+    Parameters
+    ----------
+    dataset : torch.utils.data.Dataset
+        Torch dataset.
+    transform_fn : Optional[Callable], optional
+        Transform function. Default is None.
+    """
+
+    def __init__(
+            self,
+            dataset: torch.utils.data.Dataset,
+            transform_fn: Optional[Callable] = None
+    ) -> None:
+
+        self.dataset = dataset
+        self.transform_fn = transform_fn
+        self.split = dataset.split
+
+    def __len__(self) -> int:
+
+        return len(self.dataset)
+
+    def __getitem__(self, index: int) -> Tuple[np.ndarray, np.ndarray]:
+
+        x, y = self.dataset[index]
+        if self.transform_fn:
+            x, y = self.transform_fn(x, y)
+
+        return x, y
 
 
 def get_torch_dataloader(
@@ -321,15 +316,13 @@ def get_torch_dataloader(
 
     split = dataset.split
     if split == 'train':
-        shuffle = True
         augment_cls = partial(RandomAugment, output_size=image_size, augment=True)
         drop_last = True
-        datastream = SpotsDataStream(dataset, batch_size, 1, seed, shuffle, augment_cls)
+        datastream = SpotsDataStream(dataset, batch_size, 1, seed, augment_cls)
     else:
-        shuffle = False
-        augment_cls = partial(RandomAugment, output_size=image_size, augment=False)
+        transform_fn = RandomAugment(0, output_size=image_size, augment=False).apply
         drop_last = False
-        datastream = SpotsDataStream(dataset, 0, 1, seed, shuffle, augment_cls)
+        datastream = SpotsMapDataset(dataset, transform_fn)
 
     dataloader = torch.utils.data.DataLoader(datastream, batch_size=batch_size, num_workers=num_workers,
                                              collate_fn=lambda x: list(map(list, zip(*x))), drop_last=drop_last,

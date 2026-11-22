@@ -170,7 +170,3 @@ def wrap_loss_fn(
         return loss
 
     return wrapped_loss_fn
-
-
-mean_smoothf1_loss = wrap_loss_fn(smoothf1_loss, axis=0, reduction='mean')
-mean_masked_l2_loss = wrap_loss_fn(masked_l2_loss, axis=0, reduction='mean')
